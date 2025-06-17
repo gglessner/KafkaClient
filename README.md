@@ -68,6 +68,23 @@ Example:
 python3 KafkaClient.py 10.0.0.181:9093 --client-cert valid_ee.decrypted.pem
 ```
 
+### Topic Listing Options
+
+List only topic names (clean output):
+```bash
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-topics
+```
+
+List topics with partition details:
+```bash
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-topics-partitions
+```
+
+List consumer groups:
+```bash
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-consumer-groups
+```
+
 ### Advanced Usage
 
 Use separate files for client certificate and CA certificate:
@@ -154,6 +171,11 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 - `--ca-cert`: Path to CA certificate PEM file (optional)
   - If not provided, uses the client certificate file
 
+#### Topic Listing Arguments
+- `--list-topics`: List only topic names (no partition details)
+- `--list-topics-partitions`: List topics with partition details (leader, replicas, ISRs)
+- `--list-consumer-groups`: List consumer groups
+
 #### Information Flags
 - `--cluster-info`: Show cluster information (ID, controller, etc.)
 - `--acls`: Show Access Control Lists (ACLs)
@@ -212,9 +234,10 @@ The script displays:
 
 1. **Kafka Server Info**: Connection details and broker count
 2. **Brokers**: List of all brokers with host/port information
-3. **Topics**: All topics with partition details and replication info
+3. **Topics**: All topics (topic names only by default)
 4. **Controller ID**: The controller broker ID
-5. **Consumer Groups**: All active consumer groups
+
+**Note**: By default, topics are shown without partition details. Use `--list-topics-partitions` to see detailed partition information including leaders, replicas, and ISRs. Use `--list-consumer-groups` to see consumer groups.
 
 ### Selective Information Output
 

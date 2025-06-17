@@ -291,6 +291,13 @@ def main():
     parser.add_argument('--client-cert', required=True, help='Path to client certificate PEM file')
     parser.add_argument('--ca-cert', help='Path to CA certificate PEM file (optional, uses client cert if not provided)')
     
+    # Topic listing options
+    parser.add_argument('--list-topics', action='store_true', help='List only topic names (no partitions)')
+    parser.add_argument('--list-topics-partitions', action='store_true', help='List topics with partition details')
+    
+    # Consumer group listing option
+    parser.add_argument('--list-consumer-groups', action='store_true', help='List consumer groups')
+    
     # Individual data type flags
     parser.add_argument('--cluster-info', action='store_true', help='Show cluster information (ID, controller, etc.)')
     parser.add_argument('--acls', action='store_true', help='Show Access Control Lists (ACLs)')
@@ -384,27 +391,40 @@ def main():
     for broker in metadata.brokers.values():
         print(f" - id: {broker.id}, host: {broker.host}, port: {broker.port}")
 
-    print("\nTopics:")
-    for topic_name, topic in metadata.topics.items():
-        print(f"\nTopic: {topic_name}")
-        print(f"  Partitions: {len(topic.partitions)}")
-        for partition_id, partition in topic.partitions.items():
-            print(f"    Partition {partition_id}: leader={partition.leader}, replicas={partition.replicas}, isrs={partition.isrs}")
-        if topic.error is not None:
-            print(f"  Error: {topic.error}")
+    # Handle topic listing based on options
+    if args.list_topics:
+        print("\nTopics:")
+        for topic_name in metadata.topics.keys():
+            print(f" - {topic_name}")
+    elif args.list_topics_partitions:
+        print("\nTopics:")
+        for topic_name, topic in metadata.topics.items():
+            print(f"\nTopic: {topic_name}")
+            print(f"  Partitions: {len(topic.partitions)}")
+            for partition_id, partition in topic.partitions.items():
+                print(f"    Partition {partition_id}: leader={partition.leader}, replicas={partition.replicas}, isrs={partition.isrs}")
+            if topic.error is not None:
+                print(f"  Error: {topic.error}")
+    else:
+        # Default behavior - show topics without partitions unless other flags are specified
+        print("\nTopics:")
+        for topic_name in metadata.topics.keys():
+            print(f" - {topic_name}")
 
     print("\nController ID:", metadata.controller_id)
 
-    # List consumer groups (basic info - always shown)
-    try:
-        groups_future = admin_client.list_consumer_groups()
-        groups_result = groups_future.result()
-        print("\nConsumer Groups:")
-        # Use the 'valid' attribute and access group_id
-        for group in groups_result.valid:
-            print(f" - {group.group_id}")
-    except Exception as e:
-        print("\nCould not fetch consumer groups:", e)
+    # List consumer groups if requested
+    groups_result = None
+    if args.list_consumer_groups:
+        try:
+            groups_future = admin_client.list_consumer_groups()
+            groups_result = groups_future.result()
+            print("\nConsumer Groups:")
+            # Use the 'valid' attribute and access group_id
+            for group in groups_result.valid:
+                print(f" - {group.group_id}")
+        except Exception as e:
+            print("\nCould not fetch consumer groups:", e)
 
     # Run security tests if requested
     if args.full_security_audit:
@@ -465,6 +485,11 @@ def main():
     # Show detailed consumer groups if requested
     if args.detailed_consumer_groups or args.all:
         try:
+            # Get consumer groups if not already fetched
+            if groups_result is None:
+                groups_future = admin_client.list_consumer_groups()
+                groups_result = groups_future.result()
+            
             if groups_result.valid:
                 group_ids = [group.group_id for group in groups_result.valid[:5]]  # Limit to 5 groups
                 detailed_groups_future = admin_client.describe_consumer_groups(group_ids)
