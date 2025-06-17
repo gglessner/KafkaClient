@@ -59,9 +59,17 @@ def subscribe_messages(consumer, topic, max_messages=None, timeout=1.0):
                 print(f"  Topic: {msg.topic()}")
                 print(f"  Partition: {msg.partition()}")
                 print(f"  Offset: {msg.offset()}")
-                print(f"  Key: {msg.key().decode('utf-8') if msg.key() else 'None'}")
+                # Robust key handling
+                if msg.key():
+                    try:
+                        key_str = msg.key().decode('utf-8')
+                    except UnicodeDecodeError:
+                        key_str = repr(msg.key())
+                else:
+                    key_str = 'None'
+                print(f"  Key: {key_str}")
                 
-                # Try to decode as JSON, fallback to string
+                # Try to decode as JSON, fallback to string, then to repr
                 try:
                     value = json.loads(msg.value().decode('utf-8'))
                     print(f"  Value (JSON): {json.dumps(value, indent=2)}")
@@ -70,7 +78,7 @@ def subscribe_messages(consumer, topic, max_messages=None, timeout=1.0):
                         value = msg.value().decode('utf-8')
                         print(f"  Value: {value}")
                     except UnicodeDecodeError:
-                        print(f"  Value: {msg.value()} (binary data)")
+                        print(f"  Value: {repr(msg.value())} (binary data)")
                 
                 print(f"  Timestamp: {msg.timestamp()}")
                 print("-" * 30)
@@ -374,9 +382,17 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
                     print(f"  Topic: {msg.topic()}")
                     print(f"  Partition: {msg.partition()}")
                     print(f"  Offset: {msg.offset()}")
-                    print(f"  Key: {msg.key().decode('utf-8') if msg.key() else 'None'}")
+                    # Robust key handling
+                    if msg.key():
+                        try:
+                            key_str = msg.key().decode('utf-8')
+                        except UnicodeDecodeError:
+                            key_str = repr(msg.key())
+                    else:
+                        key_str = 'None'
+                    print(f"  Key: {key_str}")
                     
-                    # Try to decode as JSON, fallback to string
+                    # Try to decode as JSON, fallback to string, then to repr
                     try:
                         value = json.loads(msg.value().decode('utf-8'))
                         print(f"  Value (JSON): {json.dumps(value, indent=2)}")
@@ -385,7 +401,7 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
                             value = msg.value().decode('utf-8')
                             print(f"  Value: {value}")
                         except UnicodeDecodeError:
-                            print(f"  Value: {msg.value()} (binary data)")
+                            print(f"  Value: {repr(msg.value())} (binary data)")
                     
                     print(f"  Timestamp: {msg.timestamp()}")
                     print("-" * 30)
@@ -403,9 +419,39 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
     except Exception as e:
         print(f"\n✗ ERROR browsing group '{group_name}': {e}")
 
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Connect to Kafka server using SSL client certificates')
+def produce_message(producer, topic, key=None, value=None, json_value=None):
+    """Produce a message to a topic"""
+    try:
+        # Handle JSON value
+        if json_value is not None:
+            try:
+                value = json.dumps(json_value).encode('utf-8')
+            except json.JSONDecodeError as e:
+                print(f"Error encoding JSON value: {e}")
+                return False
+        elif value is not None:
+            value = str(value).encode('utf-8')
+        
+        # Handle key
+        if key is not None:
+            key = str(key).encode('utf-8')
+        
+        # Produce the message
+        producer.produce(
+            topic=topic,
+            key=key,
+            value=value,
+            callback=lambda err, msg: print(f"✓ Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}")
+            if err is None else print(f"✗ Failed to deliver message: {err}")
+        )
+        producer.flush(timeout=10)
+        return True
+    except Exception as e:
+        print(f"✗ Error producing message: {e}")
+        return False
+
+def parse_args():
+    parser = argparse.ArgumentParser(description='Kafka Client Tool')
     parser.add_argument('server', help='Kafka server address and port (e.g., localhost:9093)')
     parser.add_argument('--client-cert', required=True, help='Path to client certificate PEM file')
     parser.add_argument('--ca-cert', help='Path to CA certificate PEM file (optional, uses client cert if not provided)')
@@ -449,7 +495,20 @@ def main():
     parser.add_argument('--test-injection', action='store_true', help='Test ability to inject messages into topics')
     parser.add_argument('--full-security-audit', action='store_true', help='Run all security tests and audits')
     
-    args = parser.parse_args()
+    # Producer options
+    parser.add_argument('--produce', help='Topic to produce messages to')
+    parser.add_argument('--key', help='Key for the message (optional)')
+    parser.add_argument('--value', help='Value for the message (optional)')
+    parser.add_argument('--json-value', help='JSON string to use as message value (optional)')
+    
+    # Version flag
+    parser.add_argument('--version', action='store_true',
+                      help='Show Kafka broker version information')
+    
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
     
     # Configuration
     bootstrap_servers = args.server
@@ -497,6 +556,29 @@ def main():
         browse_group(admin_client, args.browse_group, args.browse_max_messages, args.browse_timeout)
         return
 
+    # If producing to a topic, set up producer
+    if args.produce:
+        producer_conf = conf.copy()
+        producer = Producer(producer_conf)
+        
+        if not (args.value or args.json_value):
+            print("Error: Either --value or --json-value must be provided with --produce")
+            return
+            
+        if args.json_value:
+            try:
+                json_data = json.loads(args.json_value)
+            except json.JSONDecodeError as e:
+                print(f"Error: Invalid JSON value: {e}")
+                return
+            success = produce_message(producer, args.produce, args.key, json_value=json_data)
+        else:
+            success = produce_message(producer, args.produce, args.key, value=args.value)
+            
+        if success:
+            print(f"✓ Successfully produced message to topic '{args.produce}'")
+        return
+
     # Admin client for server information
     admin_client = AdminClient(conf)
 
@@ -539,11 +621,6 @@ def main():
                 print(f"    Partition {partition_id}: leader={partition.leader}, replicas={partition.replicas}, isrs={partition.isrs}")
             if topic.error is not None:
                 print(f"  Error: {topic.error}")
-    else:
-        # Default behavior - show topics without partitions unless other flags are specified
-        print("\nTopics:")
-        for topic_name in metadata.topics.keys():
-            print(f" - {topic_name}")
 
     print("\nController ID:", metadata.controller_id)
 
@@ -611,7 +688,20 @@ def main():
     # Show ACLs if requested
     if args.acls or args.all:
         try:
-            acls_future = admin_client.describe_acls()
+            from confluent_kafka.admin import AclBindingFilter, ResourceType, ResourcePatternType, AclOperation, AclPermissionType
+            
+            # Create a filter that matches all ACLs
+            acl_filter = AclBindingFilter(
+                resource_pattern_type=ResourcePatternType.ANY,
+                resource_type=ResourceType.ANY,
+                resource_name=None,
+                principal=None,
+                host=None,
+                operation=AclOperation.ANY,
+                permission_type=AclPermissionType.ANY
+            )
+            
+            acls_future = admin_client.describe_acls(acl_filter)
             acls_result = acls_future.result()
             print(f"\nAccess Control Lists (ACLs):")
             if acls_result:
@@ -649,16 +739,53 @@ def main():
     # Show user credentials if requested
     if args.user_credentials or args.all:
         try:
-            users_future = admin_client.describe_user_scram_credentials()
-            users_result = users_future.result()
-            print(f"\nUser SCRAM Credentials:")
-            if users_result:
-                for user in users_result:
-                    print(f"  - {user}")
+            # Check SCRAM users
+            scram_users = admin_client.describe_users()
+            print("\nSCRAM Users:")
+            if scram_users:
+                for user in scram_users:
+                    print(f" - {user}")
             else:
-                print("  No SCRAM users found or SCRAM not enabled")
-        except Exception as e:
-            print(f"\nCould not fetch user credentials: {e}")
+                print("No SCRAM users found or SCRAM not enabled")
+                
+            # Check SASL/PLAIN users (if configured)
+            try:
+                sasl_plain_users = admin_client.describe_sasl_users("PLAIN")
+                print("\nSASL/PLAIN Users:")
+                if sasl_plain_users:
+                    for user in sasl_plain_users:
+                        print(f" - {user}")
+                else:
+                    print("No SASL/PLAIN users found or SASL/PLAIN not enabled")
+            except Exception:
+                print("SASL/PLAIN authentication not configured")
+                
+            # Check SASL/GSSAPI (Kerberos) principals
+            try:
+                kerberos_principals = admin_client.describe_sasl_users("GSSAPI") 
+                print("\nKerberos Principals:")
+                if kerberos_principals:
+                    for principal in kerberos_principals:
+                        print(f" - {principal}")
+                else:
+                    print("No Kerberos principals found or GSSAPI not enabled")
+            except Exception:
+                print("Kerberos authentication not configured")
+                
+            # Check SASL/OAUTHBEARER tokens
+            try:
+                oauth_users = admin_client.describe_sasl_users("OAUTHBEARER")
+                print("\nOAuth Users:")
+                if oauth_users:
+                    for user in oauth_users:
+                        print(f" - {user}")
+                else:
+                    print("No OAuth users found or OAUTHBEARER not enabled")
+            except Exception:
+                print("OAuth authentication not configured")
+                
+        except KafkaError as e:
+            print(f"Could not fetch user credentials: {str(e)}")
 
     # Show broker configurations if requested
     if args.broker_configs or args.all:
@@ -688,6 +815,23 @@ def main():
                     print(f"    Partition {partition}: offset={offset_info.offset}, timestamp={offset_info.timestamp}")
         except Exception as e:
             print(f"\nCould not fetch topic offsets: {e}")
+
+    # Show version information if requested
+    if args.version or args.all:
+        try:
+            api_versions = admin_client.list_api_versions()
+            print("\nKafka Version Information:")
+            if api_versions:
+                # The broker version is typically the highest supported API version
+                max_version = max(v.max_version for v in api_versions)
+                print(f"  Broker API Version: {max_version}")
+                print("\nSupported API Versions:")
+                for api in api_versions:
+                    print(f"  {api.api_key}: min={api.min_version}, max={api.max_version}")
+            else:
+                print("  Could not determine Kafka version")
+        except KafkaError as e:
+            print(f"Could not fetch version information: {str(e)}")
 
 if __name__ == "__main__":
     main() 
