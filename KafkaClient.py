@@ -304,24 +304,23 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
     try:
         # Get group information
         print(f"\n1. Getting group information...")
-        group_future = admin_client.describe_consumer_groups([group_name])
-        group_info = group_future[group_name].result()
+        group_info = admin_client.describe_consumber_groups([group_name])
         
-        if not group_info:
+        if group_name not in group_info:
             print(f"   ✗ ERROR: Consumer group '{group_name}' not found")
             return
         
-        print(f"   ✓ Group State: {group_info.state}")
-        print(f"   ✓ Members: {len(group_info.members)}")
+        group = group_info[group_name]
+        print(f"   ✓ Group State: {group.state}")
+        print(f"   ✓ Members: {len(group.members)}")
+        print(f"   ✓ Protocol: {group.protocol}")
         
-        if group_info.state == "Stable" and len(group_info.members) > 0:
+        if group.state == 'Stable' and len(group.members) > 0:
             print(f"   ⚠ WARNING: Group has active members. Browsing may interfere with consumption.")
         
         # Get committed offsets for the group
         print(f"\n2. Getting committed offsets...")
-        from confluent_kafka.admin import ConsumerGroupTopicPartitions
-        group_topic_partitions = ConsumerGroupTopicPartitions(group_name, [])
-        offsets_result = admin_client.list_consumer_group_offsets([group_topic_partitions])
+        offsets_result = admin_client.list_consumer_group_offsets([group_name])
         
         if group_name not in offsets_result:
             print(f"   ✗ ERROR: No committed offsets found for group '{group_name}'")
@@ -741,6 +740,10 @@ def main():
                     print(f"  Group: {group_id}")
                     print(f"    State: {getattr(group_info, 'state', 'Unknown')}")
                     print(f"    Members: {len(getattr(group_info, 'members', []))}")
+                    if hasattr(group_info, 'protocol'):
+                        print(f"    Protocol: {group_info.protocol}")
+                    if hasattr(group_info, 'protocol_type'):
+                        print(f"    Protocol Type: {group_info.protocol_type}")
         except Exception as e:
             print(f"\nCould not fetch detailed consumer groups: {e}")
 
@@ -822,28 +825,26 @@ def main():
     # Show version information if requested
     if args.version or args.all:
         try:
-            # Create a temporary admin client to get API versions
-            from confluent_kafka.admin import AdminClient
-            admin_conf = {
-                'bootstrap.servers': args.server,
+            # Create a temporary producer to get API versions
+            from confluent_kafka import Producer
+            version_producer = Producer({
+                'bootstrap.servers': args.bootstrap_server,
                 'security.protocol': 'SSL',
-                'ssl.ca.location': args.ca_cert if args.ca_cert else args.client_cert,
+                'ssl.ca.location': args.ca_cert,
                 'ssl.certificate.location': args.client_cert,
-                'ssl.key.location': args.client_cert,
-                'ssl.endpoint.identification.algorithm': 'none'
-            }
-            version_admin = AdminClient(admin_conf)
+                'ssl.key.location': args.client_key
+            })
             
             print("\nKafka Version Information:")
-            # Get API versions through the underlying librdkafka client
-            api_versions = version_admin._impl._rd_kafka.api_version_request(timeout=10)
+            api_versions = version_producer.get_api_versions()
             if api_versions:
                 print("\nAPI Versions by Operation:")
                 for api in sorted(api_versions, key=lambda x: x.api_key):
-                    print(f"  {api.name}: {api.min_version} to {api.max_version}")
+                    print(f"  {api.api_name}: {api.min_version} to {api.max_version}")
             else:
                 print("Could not retrieve API version information")
                 
+            version_producer.close()
         except Exception as e:
             print(f"\nError getting version information: {e}")
 
