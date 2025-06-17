@@ -30,9 +30,23 @@ def signal_handler(sig, frame):
     print('\nShutting down gracefully...')
     sys.exit(0)
 
-def subscribe_messages(consumer, topic, max_messages=None, timeout=1.0):
-    """Subscribe to and read messages from a topic"""
-    print(f"\nSubscribing to topic: {topic}")
+def find_topics_by_prefix(admin_client, prefix):
+    """Find all topics that start with the given prefix"""
+    try:
+        metadata_future = admin_client.list_topics(timeout=10)
+        metadata = metadata_future
+        matching_topics = [topic_name for topic_name in metadata.topics.keys() if topic_name.startswith(prefix)]
+        return matching_topics
+    except Exception as e:
+        print(f"Error finding topics with prefix '{prefix}': {e}")
+        return []
+
+def subscribe_messages(consumer, topics, max_messages=None, timeout=1.0):
+    """Subscribe to and read messages from one or more topics"""
+    if isinstance(topics, str):
+        topics = [topics]
+    
+    print(f"\nSubscribing to topics: {', '.join(topics)}")
     print("Press Ctrl+C to stop reading")
     print("-" * 50)
     
@@ -489,6 +503,7 @@ def parse_args():
     
     # Consumer options
     parser.add_argument('--subscribe', help='Topic to subscribe to and read messages from')
+    parser.add_argument('--subscribe-wildcard', help='Subscribe to all topics that start with the provided prefix')
     parser.add_argument('--consumer-group', default='kafka-client-consumer', help='Consumer group ID (default: kafka-client-consumer)')
     parser.add_argument('--max-messages', type=int, help='Maximum number of messages to read (default: unlimited)')
     parser.add_argument('--from-beginning', action='store_true', help='Start reading from the beginning of the topic')
@@ -553,6 +568,40 @@ def main():
         
         # Start consuming
         subscribe_messages(consumer, args.subscribe, args.max_messages, args.timeout)
+        return
+
+    # If subscribing to topics with wildcard, set up consumer
+    if args.subscribe_wildcard:
+        # Admin client for topic discovery
+        admin_client = AdminClient(conf)
+        
+        # Find topics matching the prefix
+        matching_topics = find_topics_by_prefix(admin_client, args.subscribe_wildcard)
+        
+        if not matching_topics:
+            print(f"No topics found starting with prefix '{args.subscribe_wildcard}'")
+            return
+        
+        print(f"Found {len(matching_topics)} topics matching prefix '{args.subscribe_wildcard}':")
+        for topic in matching_topics:
+            print(f"  - {topic}")
+        
+        consumer_conf = conf.copy()
+        consumer_conf.update({
+            'group.id': args.consumer_group,
+            'auto.offset.reset': 'earliest' if args.from_beginning else 'latest',
+            'enable.auto.commit': True,
+            'auto.commit.interval.ms': 1000,
+        })
+        
+        consumer = Consumer(consumer_conf)
+        consumer.subscribe(matching_topics)
+        
+        # Set up signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        # Start consuming
+        subscribe_messages(consumer, matching_topics, args.max_messages, args.timeout)
         return
 
     # If browsing a consumer group, set up browser
