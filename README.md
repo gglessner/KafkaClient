@@ -85,6 +85,11 @@ List consumer groups:
 python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-consumer-groups
 ```
 
+List broker information:
+```bash
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-brokers
+```
+
 ### Advanced Usage
 
 Use separate files for client certificate and CA certificate:
@@ -114,17 +119,37 @@ Consume messages from a topic in real-time:
 
 ```bash
 # Basic consumption (latest messages)
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --consume my-topic
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic
 
 # Consume from beginning of topic
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --consume my-topic --from-beginning
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --from-beginning
 
 # Limit number of messages
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --consume my-topic --max-messages 10
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --max-messages 10
 
 # Custom consumer group and timeout
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --consume my-topic --consumer-group my-group --timeout 2.0
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --consumer-group my-group --timeout 2.0
 ```
+
+### **NEW: Consumer Group Browsing**
+
+Browse messages from an existing consumer group without consuming them:
+
+```bash
+# Browse messages from a consumer group (default: 10 messages, 5 second timeout)
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --browse-group my-consumer-group
+
+# Browse with custom limits
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --browse-group my-consumer-group --browse-max-messages 20 --browse-timeout 10.0
+```
+
+**Features:**
+- **Safe Browsing**: Uses temporary consumer group, doesn't affect original group
+- **No Offset Commits**: Reads messages without advancing group offsets
+- **Group Information**: Shows group state, members, and protocol
+- **Offset Details**: Displays current committed offsets for each partition
+- **Message Preview**: Shows message content with JSON parsing
+- **Configurable Limits**: Control number of messages and timeout
 
 ### **NEW: Penetration Testing & Security Assessment**
 
@@ -175,6 +200,7 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 - `--list-topics`: List only topic names (no partition details)
 - `--list-topics-partitions`: List topics with partition details (leader, replicas, ISRs)
 - `--list-consumer-groups`: List consumer groups
+- `--list-brokers`: List broker information
 
 #### Information Flags
 - `--cluster-info`: Show cluster information (ID, controller, etc.)
@@ -187,11 +213,14 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 - `--all`: Show all available information
 
 #### Consumer Arguments
-- `--consume`: Topic to consume messages from
+- `--subscribe`: Topic to subscribe to and read messages from
 - `--consumer-group`: Consumer group ID (default: kafka-client-consumer)
-- `--max-messages`: Maximum number of messages to consume (default: unlimited)
-- `--from-beginning`: Start consuming from the beginning of the topic
+- `--max-messages`: Maximum number of messages to read (default: unlimited)
+- `--from-beginning`: Start reading from the beginning of the topic
 - `--timeout`: Consumer poll timeout in seconds (default: 1.0)
+- `--browse-group`: Browse messages from an existing consumer group (without consuming)
+- `--browse-max-messages`: Maximum messages to browse from group (default: 10)
+- `--browse-timeout`: Browse timeout in seconds (default: 5.0)
 
 #### **NEW: Penetration Testing Arguments**
 - `--test-permissions`: Test various permissions (topic creation, deletion, etc.)
@@ -233,11 +262,10 @@ openssl pkcs12 -in your_cert.pfx -out ca_cert.pem -cacerts -nokeys
 The script displays:
 
 1. **Kafka Server Info**: Connection details and broker count
-2. **Brokers**: List of all brokers with host/port information
-3. **Topics**: All topics (topic names only by default)
-4. **Controller ID**: The controller broker ID
+2. **Topics**: All topics (topic names only by default)
+3. **Controller ID**: The controller broker ID
 
-**Note**: By default, topics are shown without partition details. Use `--list-topics-partitions` to see detailed partition information including leaders, replicas, and ISRs. Use `--list-consumer-groups` to see consumer groups.
+**Note**: By default, topics are shown without partition details. Use `--list-topics-partitions` to see detailed partition information including leaders, replicas, and ISRs. Use `--list-consumer-groups` to see consumer groups. Use `--list-brokers` to see broker information.
 
 ### Selective Information Output
 
@@ -251,13 +279,13 @@ Additional information based on flags:
 6. **Topic Offsets**: Current message positions for topics
 7. **Topic Configurations**: Topic-specific settings
 
-### Message Consumption Output
+### Message Subscription Output
 
-When consuming messages, the script displays:
+When subscribing to a topic, the script displays:
 
 ```
-Consuming messages from topic: my-topic
-Press Ctrl+C to stop consuming
+Subscribing to topic: my-topic
+Press Ctrl+C to stop reading
 --------------------------------------------------
 
 Message #1
@@ -279,7 +307,60 @@ Message #1
 - **Fallback Handling**: Shows raw text for non-JSON messages
 - **Binary Data Support**: Handles binary message content
 - **Message Metadata**: Shows topic, partition, offset, key, and timestamp
-- **Graceful Shutdown**: Ctrl+C to stop consuming
+- **Graceful Shutdown**: Ctrl+C to stop reading
+
+### Consumer Group Browsing Output
+
+When browsing a consumer group, the script displays:
+
+```
+============================================================
+BROWSING CONSUMER GROUP: my-consumer-group
+============================================================
+
+1. Getting group information...
+   ✓ Group State: Stable
+   ✓ Members: 2
+   ✓ Protocol: range
+   ⚠ WARNING: Group has active members. Browsing may interfere with consumption.
+
+2. Getting committed offsets...
+   ✓ Found 3 partition assignments
+   - my-topic[0]: offset 12345
+   - my-topic[1]: offset 67890
+   - my-topic[2]: offset 11111
+
+3. Creating temporary browser consumer...
+
+4. Browsing messages (max: 10)...
+Press Ctrl+C to stop browsing
+--------------------------------------------------
+
+Message #1
+  Topic: my-topic
+  Partition: 0
+  Offset: 12345
+  Key: user-123
+  Value (JSON): {
+    "user_id": "user-123",
+    "action": "login",
+    "timestamp": "2024-01-15T10:30:00Z"
+  }
+  Timestamp: 1705312200000
+------------------------------
+
+5. Browse Summary:
+   ✓ Browsed 3 messages from group 'my-consumer-group'
+   ✓ No offsets were committed (safe browsing)
+   ✓ Original group 'my-consumer-group' was not affected
+```
+
+**Features:**
+- **Group Analysis**: Shows group state, member count, and protocol
+- **Offset Mapping**: Displays current committed offsets for each partition
+- **Safe Operation**: Uses temporary consumer group to avoid interference
+- **Message Preview**: Shows message content with JSON parsing
+- **Browse Summary**: Reports results and confirms no offset commits
 
 ### **NEW: Security Assessment Output**
 
@@ -405,17 +486,17 @@ python3 KafkaClient.py localhost:9093 --client-cert cert.pem --topic-offsets
 ### Message Consumption Examples
 
 ```bash
-# Monitor a topic for new messages
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --consume events
+# Subscribe to a topic for new messages
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events
 
 # Read all historical messages from a topic
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --consume events --from-beginning
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --from-beginning
 
 # Get last 5 messages from a topic
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --consume events --max-messages 5
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --max-messages 5
 
 # Use custom consumer group for testing
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --consume events --consumer-group test-group
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --consumer-group test-group
 ```
 
 ### **NEW: Penetration Testing Examples**

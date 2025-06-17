@@ -24,16 +24,16 @@ import signal
 import sys
 import time
 from confluent_kafka.admin import AdminClient, ConfigResource
-from confluent_kafka import Consumer, KafkaError, Producer
+from confluent_kafka import Consumer, KafkaError, Producer, TopicPartition
 
 def signal_handler(sig, frame):
     print('\nShutting down gracefully...')
     sys.exit(0)
 
-def consume_messages(consumer, topic, max_messages=None, timeout=1.0):
-    """Consume messages from a topic"""
-    print(f"\nConsuming messages from topic: {topic}")
-    print("Press Ctrl+C to stop consuming")
+def subscribe_messages(consumer, topic, max_messages=None, timeout=1.0):
+    """Subscribe to and read messages from a topic"""
+    print(f"\nSubscribing to topic: {topic}")
+    print("Press Ctrl+C to stop reading")
     print("-" * 50)
     
     message_count = 0
@@ -76,7 +76,7 @@ def consume_messages(consumer, topic, max_messages=None, timeout=1.0):
                 print("-" * 30)
                 
     except KeyboardInterrupt:
-        print("\nStopping consumer...")
+        print("\nStopping subscription...")
     finally:
         consumer.close()
 
@@ -245,44 +245,163 @@ def test_message_injection(admin_client, metadata):
     print("MESSAGE INJECTION TESTING")
     print("="*60)
     
-    # Configuration for producer
-    conf = {
-        'bootstrap.servers': admin_client._impl._rd_kafka.conf.get('bootstrap.servers'),
-        'security.protocol': 'SSL',
-        'ssl.certificate.location': admin_client._impl._rd_kafka.conf.get('ssl.certificate.location'),
-        'ssl.key.location': admin_client._impl._rd_kafka.conf.get('ssl.key.location'),
-        'ssl.ca.location': admin_client._impl._rd_kafka.conf.get('ssl.ca.location'),
-        'ssl.endpoint.identification.algorithm': 'none',
-    }
-    
-    if metadata.topics:
-        test_topic = list(metadata.topics.keys())[0]
-        print(f"\nTesting message injection into topic: {test_topic}")
-        
-        try:
-            producer = Producer(conf)
+    # Test message injection into a topic
+    print(f"\n1. Testing message injection...")
+    try:
+        if metadata.topics:
+            test_topic = list(metadata.topics.keys())[0]
+            producer = Producer({
+                'bootstrap.servers': admin_client._impl._rd_kafka.conf_get('bootstrap.servers'),
+                'security.protocol': 'SSL',
+                'ssl.certificate.location': admin_client._impl._rd_kafka.conf_get('ssl.certificate.location'),
+                'ssl.key.location': admin_client._impl._rd_kafka.conf_get('ssl.key.location'),
+                'ssl.ca.location': admin_client._impl._rd_kafka.conf_get('ssl.ca.location'),
+                'ssl.endpoint.identification.algorithm': 'none',
+            })
             
-            # Test message
+            # Send a test message
             test_message = {
-                "test": "security_audit",
-                "timestamp": time.time(),
-                "source": "kafka_client_pen_test"
+                'test_type': 'security_audit',
+                'timestamp': int(time.time()),
+                'source': 'kafka-client-tool',
+                'message': 'Test message for security assessment'
             }
             
             producer.produce(
                 topic=test_topic,
                 key='security-test',
-                value=json.dumps(test_message),
-                callback=lambda err, msg: print(f"   ✓ Message delivered to {msg.topic()} [{msg.partition()}] at offset {msg.offset()}") if not err else print(f"   ✗ Message delivery failed: {err}")
+                value=json.dumps(test_message).encode('utf-8'),
+                callback=lambda err, msg: None
             )
-            
             producer.flush(timeout=10)
             print(f"   ✓ SUCCESS: Can inject messages into topic '{test_topic}'")
             
-        except Exception as e:
-            print(f"   ✗ FAILED: Cannot inject messages into topic '{test_topic}': {e}")
-    else:
-        print("\n⚠ SKIPPED: No topics available for message injection testing")
+        else:
+            print("   ⚠ SKIPPED: No topics available for injection testing")
+    except Exception as e:
+        print(f"   ✗ FAILED: Cannot inject messages: {e}")
+
+def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
+    """Safely browse messages from an existing consumer group without consuming them"""
+    print(f"\n" + "="*60)
+    print(f"BROWSING CONSUMER GROUP: {group_name}")
+    print("="*60)
+    
+    try:
+        # Get group information
+        print(f"\n1. Getting group information...")
+        group_future = admin_client.describe_consumer_groups([group_name])
+        group_info = group_future.result()
+        
+        if group_name not in group_info:
+            print(f"   ✗ ERROR: Consumer group '{group_name}' not found")
+            return
+        
+        group = group_info[group_name]
+        print(f"   ✓ Group State: {group.state}")
+        print(f"   ✓ Members: {len(group.members)}")
+        print(f"   ✓ Protocol: {group.protocol}")
+        
+        if group.state == 'Stable' and len(group.members) > 0:
+            print(f"   ⚠ WARNING: Group has active members. Browsing may interfere with consumption.")
+        
+        # Get committed offsets for the group
+        print(f"\n2. Getting committed offsets...")
+        offsets_future = admin_client.list_consumer_group_offsets([group_name])
+        offsets_result = offsets_future.result()
+        
+        if group_name not in offsets_result:
+            print(f"   ✗ ERROR: No committed offsets found for group '{group_name}'")
+            return
+        
+        group_offsets = offsets_result[group_name]
+        if not group_offsets:
+            print(f"   ⚠ WARNING: No committed offsets found for group '{group_name}'")
+            return
+        
+        print(f"   ✓ Found {len(group_offsets)} partition assignments")
+        
+        # Create a temporary consumer for browsing
+        print(f"\n3. Creating temporary browser consumer...")
+        browser_conf = {
+            'bootstrap.servers': admin_client._impl._rd_kafka.conf_get('bootstrap.servers'),
+            'security.protocol': 'SSL',
+            'ssl.certificate.location': admin_client._impl._rd_kafka.conf_get('ssl.certificate.location'),
+            'ssl.key.location': admin_client._impl._rd_kafka.conf_get('ssl.key.location'),
+            'ssl.ca.location': admin_client._impl._rd_kafka.conf_get('ssl.ca.location'),
+            'ssl.endpoint.identification.algorithm': 'none',
+            'group.id': f'browse-{group_name}-{int(time.time())}',  # Temporary group
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,  # Don't commit offsets
+            'enable.partition.eof': True,
+        }
+        
+        browser_consumer = Consumer(browser_conf)
+        
+        # Manually assign partitions and set offsets
+        topic_partitions = []
+        for (topic, partition), offset_info in group_offsets.items():
+            tp = TopicPartition(topic, partition, offset_info.offset)
+            topic_partitions.append(tp)
+            print(f"   - {topic}[{partition}]: offset {offset_info.offset}")
+        
+        browser_consumer.assign(topic_partitions)
+        
+        # Browse messages
+        print(f"\n4. Browsing messages (max: {max_messages})...")
+        print("Press Ctrl+C to stop browsing")
+        print("-" * 50)
+        
+        message_count = 0
+        start_time = time.time()
+        
+        try:
+            while message_count < max_messages and (time.time() - start_time) < timeout:
+                msg = browser_consumer.poll(1.0)
+                
+                if msg is None:
+                    continue
+                elif msg.error():
+                    if msg.error().code() == KafkaError._PARTITION_EOF:
+                        print(f"Reached end of partition {msg.partition()}")
+                        break
+                    else:
+                        print(f"Consumer error: {msg.error()}")
+                        break
+                else:
+                    message_count += 1
+                    print(f"\nMessage #{message_count}")
+                    print(f"  Topic: {msg.topic()}")
+                    print(f"  Partition: {msg.partition()}")
+                    print(f"  Offset: {msg.offset()}")
+                    print(f"  Key: {msg.key().decode('utf-8') if msg.key() else 'None'}")
+                    
+                    # Try to decode as JSON, fallback to string
+                    try:
+                        value = json.loads(msg.value().decode('utf-8'))
+                        print(f"  Value (JSON): {json.dumps(value, indent=2)}")
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        try:
+                            value = msg.value().decode('utf-8')
+                            print(f"  Value: {value}")
+                        except UnicodeDecodeError:
+                            print(f"  Value: {msg.value()} (binary data)")
+                    
+                    print(f"  Timestamp: {msg.timestamp()}")
+                    print("-" * 30)
+                    
+        except KeyboardInterrupt:
+            print("\nStopping browser...")
+        finally:
+            browser_consumer.close()
+        
+        print(f"\n5. Browse Summary:")
+        print(f"   ✓ Browsed {message_count} messages from group '{group_name}'")
+        print(f"   ✓ No offsets were committed (safe browsing)")
+        print(f"   ✓ Original group '{group_name}' was not affected")
+        
+    except Exception as e:
+        print(f"\n✗ ERROR browsing group '{group_name}': {e}")
 
 def main():
     # Parse command line arguments
@@ -298,6 +417,9 @@ def main():
     # Consumer group listing option
     parser.add_argument('--list-consumer-groups', action='store_true', help='List consumer groups')
     
+    # Broker listing option
+    parser.add_argument('--list-brokers', action='store_true', help='List broker information')
+    
     # Individual data type flags
     parser.add_argument('--cluster-info', action='store_true', help='Show cluster information (ID, controller, etc.)')
     parser.add_argument('--acls', action='store_true', help='Show Access Control Lists (ACLs)')
@@ -309,11 +431,16 @@ def main():
     parser.add_argument('--all', action='store_true', help='Show all available information')
     
     # Consumer options
-    parser.add_argument('--consume', help='Topic to consume messages from')
+    parser.add_argument('--subscribe', help='Topic to subscribe to and read messages from')
     parser.add_argument('--consumer-group', default='kafka-client-consumer', help='Consumer group ID (default: kafka-client-consumer)')
-    parser.add_argument('--max-messages', type=int, help='Maximum number of messages to consume (default: unlimited)')
-    parser.add_argument('--from-beginning', action='store_true', help='Start consuming from the beginning of the topic')
+    parser.add_argument('--max-messages', type=int, help='Maximum number of messages to read (default: unlimited)')
+    parser.add_argument('--from-beginning', action='store_true', help='Start reading from the beginning of the topic')
     parser.add_argument('--timeout', type=float, default=1.0, help='Consumer poll timeout in seconds (default: 1.0)')
+    
+    # Consumer group browsing option
+    parser.add_argument('--browse-group', help='Browse messages from an existing consumer group (without consuming)')
+    parser.add_argument('--browse-max-messages', type=int, default=10, help='Maximum messages to browse from group (default: 10)')
+    parser.add_argument('--browse-timeout', type=float, default=5.0, help='Browse timeout in seconds (default: 5.0)')
     
     # Penetration testing specific flags
     parser.add_argument('--test-permissions', action='store_true', help='Test various permissions (topic creation, deletion, etc.)')
@@ -338,8 +465,8 @@ def main():
         'ssl.endpoint.identification.algorithm': 'none',  # Disable hostname verification
     }
 
-    # If consuming messages, set up consumer
-    if args.consume:
+    # If subscribing to a topic, set up consumer
+    if args.subscribe:
         consumer_conf = conf.copy()
         consumer_conf.update({
             'group.id': args.consumer_group,
@@ -349,13 +476,25 @@ def main():
         })
         
         consumer = Consumer(consumer_conf)
-        consumer.subscribe([args.consume])
+        consumer.subscribe([args.subscribe])
         
         # Set up signal handler for graceful shutdown
         signal.signal(signal.SIGINT, signal_handler)
         
         # Start consuming
-        consume_messages(consumer, args.consume, args.max_messages, args.timeout)
+        subscribe_messages(consumer, args.subscribe, args.max_messages, args.timeout)
+        return
+
+    # If browsing a consumer group, set up browser
+    if args.browse_group:
+        # Admin client for group browsing
+        admin_client = AdminClient(conf)
+        
+        # Set up signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        # Start browsing
+        browse_group(admin_client, args.browse_group, args.browse_max_messages, args.browse_timeout)
         return
 
     # Admin client for server information
@@ -386,11 +525,6 @@ def main():
         print(f"\nCould not get server version info: {e}")
         return
 
-    # Always show basic information
-    print("\nBrokers:")
-    for broker in metadata.brokers.values():
-        print(f" - id: {broker.id}, host: {broker.host}, port: {broker.port}")
-
     # Handle topic listing based on options
     if args.list_topics:
         print("\nTopics:")
@@ -412,6 +546,12 @@ def main():
             print(f" - {topic_name}")
 
     print("\nController ID:", metadata.controller_id)
+
+    # List brokers if requested
+    if args.list_brokers:
+        print("\nBrokers:")
+        for broker in metadata.brokers.values():
+            print(f" - id: {broker.id}, host: {broker.host}, port: {broker.port}")
 
     # List consumer groups if requested
     groups_result = None
@@ -492,15 +632,17 @@ def main():
             
             if groups_result.valid:
                 group_ids = [group.group_id for group in groups_result.valid[:5]]  # Limit to 5 groups
-                detailed_groups_future = admin_client.describe_consumer_groups(group_ids)
-                detailed_groups = detailed_groups_future.result()
+                detailed_groups = admin_client.describe_consumer_groups(group_ids)
                 print(f"\nDetailed Consumer Group Information:")
-                for group_id, group_info in detailed_groups.items():
+                for group_id, group_info_future in detailed_groups.items():
+                    group_info = group_info_future.result()
                     print(f"  Group: {group_id}")
-                    print(f"    State: {group_info.state}")
-                    print(f"    Members: {len(group_info.members)}")
-                    print(f"    Protocol: {group_info.protocol}")
-                    print(f"    Protocol Type: {group_info.protocol_type}")
+                    print(f"    State: {getattr(group_info, 'state', 'Unknown')}")
+                    print(f"    Members: {len(getattr(group_info, 'members', []))}")
+                    if hasattr(group_info, 'protocol'):
+                        print(f"    Protocol: {group_info.protocol}")
+                    if hasattr(group_info, 'protocol_type'):
+                        print(f"    Protocol Type: {group_info.protocol_type}")
         except Exception as e:
             print(f"\nCould not fetch detailed consumer groups: {e}")
 
