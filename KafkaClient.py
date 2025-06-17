@@ -69,16 +69,22 @@ def subscribe_messages(consumer, topic, max_messages=None, timeout=1.0):
                     key_str = 'None'
                 print(f"  Key: {key_str}")
                 
-                # Try to decode as JSON, fallback to string, then to repr
+                # Robust value handling
                 try:
-                    value = json.loads(msg.value().decode('utf-8'))
-                    print(f"  Value (JSON): {json.dumps(value, indent=2)}")
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    try:
-                        value = msg.value().decode('utf-8')
-                        print(f"  Value: {value}")
-                    except UnicodeDecodeError:
-                        print(f"  Value: {repr(msg.value())} (binary data)")
+                    if msg.value() is None:
+                        print("  Value: None")
+                    else:
+                        try:
+                            value = json.loads(msg.value().decode('utf-8'))
+                            print(f"  Value (JSON): {json.dumps(value, indent=2)}")
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            try:
+                                value = msg.value().decode('utf-8')
+                                print(f"  Value: {value}")
+                            except UnicodeDecodeError:
+                                print(f"  Value: {repr(msg.value())} (binary data)")
+                except Exception as e:
+                    print(f"  Error reading value: {e}")
                 
                 print(f"  Timestamp: {msg.timestamp()}")
                 print("-" * 30)
@@ -298,8 +304,7 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
     try:
         # Get group information
         print(f"\n1. Getting group information...")
-        group_future = admin_client.describe_consumer_groups([group_name])
-        group_info = group_future.result()
+        group_info = admin_client.describe_consumber_groups([group_name])
         
         if group_name not in group_info:
             print(f"   ✗ ERROR: Consumer group '{group_name}' not found")
@@ -315,8 +320,7 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
         
         # Get committed offsets for the group
         print(f"\n2. Getting committed offsets...")
-        offsets_future = admin_client.list_consumer_group_offsets([group_name])
-        offsets_result = offsets_future.result()
+        offsets_result = admin_client.list_consumer_group_offsets([group_name])
         
         if group_name not in offsets_result:
             print(f"   ✗ ERROR: No committed offsets found for group '{group_name}'")
@@ -382,6 +386,7 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
                     print(f"  Topic: {msg.topic()}")
                     print(f"  Partition: {msg.partition()}")
                     print(f"  Offset: {msg.offset()}")
+                    
                     # Robust key handling
                     if msg.key():
                         try:
@@ -392,16 +397,22 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
                         key_str = 'None'
                     print(f"  Key: {key_str}")
                     
-                    # Try to decode as JSON, fallback to string, then to repr
+                    # Robust value handling
                     try:
-                        value = json.loads(msg.value().decode('utf-8'))
-                        print(f"  Value (JSON): {json.dumps(value, indent=2)}")
-                    except (json.JSONDecodeError, UnicodeDecodeError):
-                        try:
-                            value = msg.value().decode('utf-8')
-                            print(f"  Value: {value}")
-                        except UnicodeDecodeError:
-                            print(f"  Value: {repr(msg.value())} (binary data)")
+                        if msg.value() is None:
+                            print("  Value: None")
+                        else:
+                            try:
+                                value = json.loads(msg.value().decode('utf-8'))
+                                print(f"  Value (JSON): {json.dumps(value, indent=2)}")
+                            except (json.JSONDecodeError, UnicodeDecodeError):
+                                try:
+                                    value = msg.value().decode('utf-8')
+                                    print(f"  Value: {value}")
+                                except UnicodeDecodeError:
+                                    print(f"  Value: {repr(msg.value())} (binary data)")
+                    except Exception as e:
+                        print(f"  Error reading value: {e}")
                     
                     print(f"  Timestamp: {msg.timestamp()}")
                     print("-" * 30)
@@ -739,53 +750,48 @@ def main():
     # Show user credentials if requested
     if args.user_credentials or args.all:
         try:
-            # Check SCRAM users
-            scram_users = admin_client.describe_users()
-            print("\nSCRAM Users:")
-            if scram_users:
-                for user in scram_users:
-                    print(f" - {user}")
-            else:
-                print("No SCRAM users found or SCRAM not enabled")
-                
-            # Check SASL/PLAIN users (if configured)
+            # We can check for SCRAM credentials using describe_acls with a filter
+            from confluent_kafka.admin import AclBindingFilter, ResourceType, ResourcePatternType, AclOperation, AclPermissionType
+            
+            # Create a filter for User resources
+            user_filter = AclBindingFilter(
+                resource_pattern_type=ResourcePatternType.ANY,
+                resource_type=ResourceType.USER,  # Filter for user resources
+                resource_name=None,  # Match all users
+                principal=None,
+                host=None,
+                operation=AclOperation.ANY,
+                permission_type=AclPermissionType.ANY
+            )
+            
+            print("\nUser Credentials:")
             try:
-                sasl_plain_users = admin_client.describe_sasl_users("PLAIN")
-                print("\nSASL/PLAIN Users:")
-                if sasl_plain_users:
-                    for user in sasl_plain_users:
-                        print(f" - {user}")
-                else:
-                    print("No SASL/PLAIN users found or SASL/PLAIN not enabled")
-            except Exception:
-                print("SASL/PLAIN authentication not configured")
+                users_future = admin_client.describe_acls(user_filter)
+                users_result = users_future.result()
                 
-            # Check SASL/GSSAPI (Kerberos) principals
-            try:
-                kerberos_principals = admin_client.describe_sasl_users("GSSAPI") 
-                print("\nKerberos Principals:")
-                if kerberos_principals:
-                    for principal in kerberos_principals:
+                if users_result:
+                    print("\nAuthorized Users:")
+                    # Extract unique principals from ACLs
+                    principals = set()
+                    for acl in users_result:
+                        if acl.principal:
+                            principals.add(acl.principal)
+                    
+                    for principal in sorted(principals):
                         print(f" - {principal}")
                 else:
-                    print("No Kerberos principals found or GSSAPI not enabled")
-            except Exception:
-                print("Kerberos authentication not configured")
-                
-            # Check SASL/OAUTHBEARER tokens
-            try:
-                oauth_users = admin_client.describe_sasl_users("OAUTHBEARER")
-                print("\nOAuth Users:")
-                if oauth_users:
-                    for user in oauth_users:
-                        print(f" - {user}")
+                    print("No user credentials found or access not authorized")
+                    
+            except Exception as e:
+                if "SecurityDisabledException" in str(e):
+                    print("Security/Authentication is not enabled on this cluster")
+                elif "AuthorizationException" in str(e):
+                    print("Not authorized to view user credentials")
                 else:
-                    print("No OAuth users found or OAUTHBEARER not enabled")
-            except Exception:
-                print("OAuth authentication not configured")
-                
-        except KafkaError as e:
-            print(f"Could not fetch user credentials: {str(e)}")
+                    print(f"Error fetching user credentials: {e}")
+                    
+        except Exception as e:
+            print(f"Error checking user credentials: {e}")
 
     # Show broker configurations if requested
     if args.broker_configs or args.all:
@@ -819,19 +825,28 @@ def main():
     # Show version information if requested
     if args.version or args.all:
         try:
-            api_versions = admin_client.list_api_versions()
+            # Create a temporary producer to get API versions
+            from confluent_kafka import Producer
+            version_producer = Producer({
+                'bootstrap.servers': args.bootstrap_server,
+                'security.protocol': 'SSL',
+                'ssl.ca.location': args.ca_cert,
+                'ssl.certificate.location': args.client_cert,
+                'ssl.key.location': args.client_key
+            })
+            
             print("\nKafka Version Information:")
+            api_versions = version_producer.get_api_versions()
             if api_versions:
-                # The broker version is typically the highest supported API version
-                max_version = max(v.max_version for v in api_versions)
-                print(f"  Broker API Version: {max_version}")
-                print("\nSupported API Versions:")
-                for api in api_versions:
-                    print(f"  {api.api_key}: min={api.min_version}, max={api.max_version}")
+                print("\nAPI Versions by Operation:")
+                for api in sorted(api_versions, key=lambda x: x.api_key):
+                    print(f"  {api.api_name}: {api.min_version} to {api.max_version}")
             else:
-                print("  Could not determine Kafka version")
-        except KafkaError as e:
-            print(f"Could not fetch version information: {str(e)}")
+                print("Could not retrieve API version information")
+                
+            version_producer.close()
+        except Exception as e:
+            print(f"\nError getting version information: {e}")
 
 if __name__ == "__main__":
     main() 
