@@ -37,6 +37,7 @@ This tool connects to an Apache Kafka server using TLS/SSL with client-side cert
 - **NEW**: Security configuration auditing
 - **NEW**: Sensitive data enumeration and pattern matching
 - **NEW**: Message injection testing and payload validation
+- **NEW**: Scan all consumer groups and topics for available (unconsumed) messages without consuming them
 
 ## Requirements
 
@@ -238,6 +239,41 @@ SAFELY DELETING CONSUMER GROUP: my-consumer-group
    ✓ SUCCESS: Consumer group 'my-consumer-group' deleted successfully
 ```
 
+### **NEW: Scan for Available Messages**
+
+Scan all consumer groups and topics to see where messages are available for consumption (without consuming or committing offsets):
+
+```bash
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --scan-available-messages
+```
+
+- Lists all consumer groups and topics
+- Compares each group's committed offset to the latest offset for every topic/partition
+- Reports where messages are available for consumption
+- Does not consume or commit any messages
+
+**Sample Output:**
+```
+==============================
+SCANNING FOR AVAILABLE MESSAGES
+==============================
+
+Group                          Topic                          Partition  Committed  Latest     Available 
+----------------------------------------------------------------------------------------------------
+my-group                       my-topic                       0          12345      12350      5         
+my-group                       my-topic                       1          67890      67900      10        
+
+✓ Scan complete. 2 topic-partitions have available messages for their groups.
+```
+
+**Note:**
+- This feature requires a recent version of the `confluent_kafka` Python library. Some older versions may not support the necessary offset query APIs and will display an error or no results.
+- If you see errors about `ConsumerGroupTopicPartitions` or argument signatures, upgrade with:
+  ```
+  pip install -U confluent-kafka
+  ```
+- This feature works with both Apache Kafka and Confluent Platform brokers.
+
 ### **NEW: Penetration Testing & Security Assessment**
 
 #### Complete Security Audit
@@ -318,6 +354,9 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 - `--enumerate-sensitive`: Look for potentially sensitive data in topics
 - `--test-injection`: Test ability to inject messages into topics
 - `--full-security-audit`: Run all security tests and audits
+
+#### **NEW: Scan for Available Messages**
+- `--scan-available-messages`: Scan all consumer groups and topics for available (unconsumed) messages without consuming them
 
 ### Help
 
@@ -634,6 +673,11 @@ python3 KafkaClient.py localhost:9093 --client-cert cert.pem --enumerate-sensiti
 
 # Test message injection capabilities
 python3 KafkaClient.py localhost:9093 --client-cert cert.pem --test-injection
+```
+
+### Scan for Available Messages Example
+```bash
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --scan-available-messages
 ```
 
 ## Penetration Testing Use Cases

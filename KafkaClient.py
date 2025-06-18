@@ -798,6 +798,77 @@ def create_test_consumer_group(admin_client, conf, group_name, topic_name):
     except Exception as e:
         print(f"   ✗ ERROR creating test consumer group: {e}")
 
+def scan_available_messages(conf):
+    """Scan all consumer groups and topics for available messages (unconsumed) without consuming them."""
+    from confluent_kafka.admin import AdminClient
+    from confluent_kafka import Consumer, TopicPartition
+    import time
+
+    print("\n==============================")
+    print("SCANNING FOR AVAILABLE MESSAGES")
+    print("==============================\n")
+
+    admin = AdminClient(conf)
+    # List all topics
+    metadata = admin.list_topics(timeout=10)
+    topics = list(metadata.topics.keys())
+    # List all consumer groups (get result from Future)
+    group_future = admin.list_consumer_groups()
+    groups_result = group_future.result()  # ListConsumerGroupsResult object
+    groups = [group.group_id for group in getattr(groups_result, 'valid', [])]
+    if not groups:
+        print("No consumer groups found.")
+        return
+    if not topics:
+        print("No topics found.")
+        return
+
+    # Prepare a summary
+    summary = []
+    for group in groups:
+        try:
+            offsets = admin.list_consumer_group_offsets(group)
+        except Exception as e:
+            print(f"  ✗ Could not get offsets for group {group}: {e}")
+            continue
+        for topic in topics:
+            partitions = list(metadata.topics[topic].partitions.keys())
+            for partition in partitions:
+                tp = TopicPartition(topic, partition)
+                committed = offsets.get(tp, None)
+                if committed is None or committed.offset is None or committed.offset < 0:
+                    continue
+                # Get latest offset for this topic/partition
+                consumer_conf = conf.copy()
+                consumer_conf['group.id'] = f'scan-{int(time.time())}'
+                consumer_conf['enable.auto.commit'] = False
+                consumer = Consumer(consumer_conf)
+                try:
+                    low, high = consumer.get_watermark_offsets(tp, timeout=5)
+                except Exception as e:
+                    consumer.close()
+                    continue
+                consumer.close()
+                if high > committed.offset:
+                    summary.append({
+                        'group': group,
+                        'topic': topic,
+                        'partition': partition,
+                        'committed': committed.offset,
+                        'latest': high,
+                        'available': high - committed.offset
+                    })
+
+    if not summary:
+        print("No available messages found for any group.")
+        return
+
+    print(f"{'Group':<30} {'Topic':<30} {'Partition':<10} {'Committed':<10} {'Latest':<10} {'Available':<10}")
+    print("-"*100)
+    for row in summary:
+        print(f"{row['group']:<30} {row['topic']:<30} {row['partition']:<10} {row['committed']:<10} {row['latest']:<10} {row['available']:<10}")
+    print(f"\n✓ Scan complete. {len(summary)} topic-partitions have available messages for their groups.")
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Kafka Client Tool')
     parser.add_argument('server', help='Kafka server address and port (e.g., localhost:9093)')
@@ -855,6 +926,9 @@ def parse_args():
     parser.add_argument('--key', help='Key for the message (optional)')
     parser.add_argument('--value', help='Value for the message (optional)')
     parser.add_argument('--json-value', help='JSON string to use as message value (optional)')
+    
+    # New flag
+    parser.add_argument('--scan-available-messages', action='store_true', help='Scan all consumer groups and topics for available (unconsumed) messages without consuming them')
     
     return parser.parse_args()
 
@@ -1242,6 +1316,10 @@ def main():
     if args.create_test_group:
         group_name, topic_name = args.create_test_group.split(':')
         create_test_consumer_group(admin_client, conf, group_name, topic_name)
+        return
+
+    if args.scan_available_messages:
+        scan_available_messages(conf)
         return
 
 if __name__ == "__main__":
