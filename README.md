@@ -29,6 +29,10 @@ This tool connects to an Apache Kafka server using TLS/SSL with client-side cert
 - **NEW**: Selective server information gathering with individual flags
 - **NEW**: Real-time message consumption with JSON parsing
 - **NEW**: Configurable consumer options (group ID, offset reset, message limits)
+- **NEW**: Consumer group browsing without consuming messages
+- **NEW**: Safe consumer group deletion (only if no active consumers)
+- **NEW**: Detailed consumer group information and analysis
+- **NEW**: Test consumer group creation for development and testing
 - **NEW**: Permission testing and privilege escalation detection
 - **NEW**: Security configuration auditing
 - **NEW**: Sensitive data enumeration and pattern matching
@@ -151,6 +155,89 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --browse-group my-
 - **Message Preview**: Shows message content with JSON parsing
 - **Configurable Limits**: Control number of messages and timeout
 
+### **NEW: Consumer Group Management**
+
+Safely delete consumer groups (only if no active consumers):
+
+```bash
+# Delete a consumer group safely
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --delete-consumer-group my-consumer-group
+```
+
+Get detailed information about a specific consumer group:
+
+```bash
+# Describe a consumer group in detail
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --describe-consumer-group my-consumer-group
+```
+
+Create a test consumer group for testing purposes:
+
+```bash
+# Create a test consumer group (format: group_name:topic_name)
+python3 KafkaClient.py <server:port> --client-cert <cert.pem> --create-test-group test-group:test-topic
+```
+
+**Safety Features:**
+- **Pre-deletion Check**: Verifies group state and member count
+- **Active Consumer Detection**: Refuses to delete if consumers are connected
+- **Clear Error Messages**: Explains why deletion failed
+- **Helpful Suggestions**: Tells users what to do if deletion fails
+
+**Describe Consumer Group Features:**
+- **Group Information**: State, protocol type, member count
+- **Member Details**: Client ID, host, timeouts, partition assignments
+- **Committed Offsets**: Current offset positions for all partitions
+- **Group Health Summary**: Status assessment and recommendations
+
+**Example Output for Describe:**
+```
+============================================================
+CONSUMER GROUP DETAILS: my-consumer-group
+============================================================
+
+1. Getting consumer group information...
+   ✓ Group ID: my-consumer-group
+   ✓ State: Stable
+   ✓ Protocol Type: consumer
+   ✓ Protocol: range
+   ✓ Members: 2
+
+2. Member Details:
+   Member 1:
+     ✓ Member ID: consumer-1-1234567890
+     ✓ Client ID: my-consumer-app
+     ✓ Client Host: 192.168.1.100
+     ✓ Session Timeout: 30000ms
+     ✓ Partition Assignments:
+       - my-topic[0]: partition 0
+       - my-topic[1]: partition 1
+
+3. Committed Offsets:
+   ✓ Found 2 partition assignments with offsets:
+     - my-topic[0]: offset 12345
+     - my-topic[1]: offset 67890
+
+4. Group Summary:
+   ✓ Group is healthy and active
+   ✓ 2 consumer(s) are processing messages
+```
+
+**Example Output for Delete:**
+```
+============================================================
+SAFELY DELETING CONSUMER GROUP: my-consumer-group
+============================================================
+
+1. Checking consumer group status...
+   ✓ Group State: Stable
+   ✓ Members: 0
+   ✓ Group is empty - safe to delete
+
+2. Attempting to delete consumer group...
+   ✓ SUCCESS: Consumer group 'my-consumer-group' deleted successfully
+```
+
 ### **NEW: Penetration Testing & Security Assessment**
 
 #### Complete Security Audit
@@ -164,7 +251,7 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --full-security-au
 
 **Permission Testing:**
 ```bash
-# Test topic creation, deletion, and configuration permissions
+# Test topic creation, deletion, partition creation, configuration alteration, and consumer group permissions
 python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-permissions
 ```
 
@@ -221,6 +308,9 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 - `--browse-group`: Browse messages from an existing consumer group (without consuming)
 - `--browse-max-messages`: Maximum messages to browse from group (default: 10)
 - `--browse-timeout`: Browse timeout in seconds (default: 5.0)
+- `--delete-consumer-group`: Safely delete a consumer group (only if no active consumers)
+- `--describe-consumer-group`: Get detailed information about a specific consumer group
+- `--create-test-group`: Create a test consumer group for testing purposes (format: group_name:topic_name)
 
 #### **NEW: Penetration Testing Arguments**
 - `--test-permissions`: Test various permissions (topic creation, deletion, etc.)
@@ -375,10 +465,22 @@ PERMISSION TESTING
    ✓ SUCCESS: Can delete topic 'security-test-1705312200'
 
 2. Testing partition creation permission...
-   ✓ SUCCESS: Can create partitions for topic 'my-topic'
+   ✓ Created temporary topic 'partition-test-1705312200' with 1 partition
+   ✓ SUCCESS: Can create partitions for topic 'partition-test-1705312200' (increased from 1 to 2)
+   ✓ Cleaned up temporary topic 'partition-test-1705312200'
 
 3. Testing configuration alteration permission...
-   ✓ SUCCESS: Can alter topic configuration for 'my-topic'
+   ✓ Created temporary topic 'config-test-1705312200' for config testing
+   ✓ SUCCESS: Can alter topic configuration for 'config-test-1705312200'
+   ✓ Cleaned up temporary topic 'config-test-1705312200'
+
+4. Testing consumer group permissions...
+   ✓ Created temporary topic 'consumer-test-1705312200' for consumer group testing
+   ✓ No messages in topic, but consumer group 'test-group-1705312200' was created
+   ✓ SUCCESS: Can commit offsets for consumer group 'test-group-1705312200'
+   ✓ Closed consumer to leave group 'test-group-1705312200'
+   ✓ SUCCESS: Can delete consumer group 'test-group-1705312200'
+   ✓ Cleaned up temporary topic 'consumer-test-1705312200'
 ```
 
 #### Security Configuration Audit Output
@@ -497,6 +599,22 @@ python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events 
 
 # Use custom consumer group for testing
 python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --consumer-group test-group
+```
+
+### **NEW: Consumer Group Management Examples**
+
+```bash
+# Safely delete an empty consumer group
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --delete-consumer-group old-consumer-group
+
+# Get detailed information about a consumer group
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --describe-consumer-group my-consumer-group
+
+# Create a test consumer group for testing
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --create-test-group test-group:test-topic
+
+# Browse messages from a consumer group without consuming
+python3 KafkaClient.py localhost:9093 --client-cert cert.pem --browse-group my-consumer-group --browse-max-messages 20
 ```
 
 ### **NEW: Penetration Testing Examples**

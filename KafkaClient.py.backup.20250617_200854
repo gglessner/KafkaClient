@@ -108,7 +108,7 @@ def subscribe_messages(consumer, topics, max_messages=None, timeout=1.0):
     finally:
         consumer.close()
 
-def test_permissions(admin_client, metadata, conf):
+def test_permissions(admin_client, metadata):
     """Test various permissions to identify security misconfigurations"""
     print("\n" + "="*60)
     print("PERMISSION TESTING")
@@ -137,165 +137,31 @@ def test_permissions(admin_client, metadata, conf):
     # Test partition creation permission
     print(f"\n2. Testing partition creation permission...")
     try:
-        # Create a temporary topic for partition testing
-        temp_topic = f"partition-test-{int(time.time())}"
-        from confluent_kafka.admin import NewTopic
-        
-        # Create topic with 1 partition initially
-        topic_future = admin_client.create_topics([NewTopic(temp_topic, num_partitions=1, replication_factor=1)])
-        topic_future[temp_topic].result(timeout=10)
-        print(f"   ✓ Created temporary topic '{temp_topic}' with 1 partition")
-        
-        # Now test adding a partition
-        from confluent_kafka.admin import NewPartitions
-        partition_future = admin_client.create_partitions([NewPartitions(temp_topic, 2)])
-        partition_future[temp_topic].result(timeout=10)
-        print(f"   ✓ SUCCESS: Can create partitions for topic '{temp_topic}' (increased from 1 to 2)")
-        
-        # Clean up - delete the temporary topic
-        try:
-            delete_future = admin_client.delete_topics([temp_topic])
-            delete_future[temp_topic].result(timeout=10)
-            print(f"   ✓ Cleaned up temporary topic '{temp_topic}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Could not delete temporary topic '{temp_topic}': {e}")
-            
+        if metadata.topics:
+            test_topic_name = list(metadata.topics.keys())[0]
+            from confluent_kafka.admin import NewPartitions
+            partition_future = admin_client.create_partitions([NewPartitions(test_topic_name, 2)])
+            partition_future[test_topic_name].result(timeout=10)
+            print(f"   ✓ SUCCESS: Can create partitions for topic '{test_topic_name}'")
+        else:
+            print("   ⚠ SKIPPED: No topics available for partition testing")
     except Exception as e:
         print(f"   ✗ FAILED: Cannot create partitions: {e}")
-        # Try to clean up if topic was created but partition creation failed
-        try:
-            if 'temp_topic' in locals():
-                delete_future = admin_client.delete_topics([temp_topic])
-                delete_future[temp_topic].result(timeout=10)
-                print(f"   ✓ Cleaned up temporary topic '{temp_topic}' after failure")
-        except:
-            pass
     
     # Test configuration alteration permission
     print(f"\n3. Testing configuration alteration permission...")
     try:
-        import warnings
-        # Create a temporary topic for config testing
-        temp_topic = f"config-test-{int(time.time())}"
-        from confluent_kafka.admin import NewTopic, ConfigResource
-        
-        # Create topic initially
-        topic_future = admin_client.create_topics([NewTopic(temp_topic, num_partitions=1, replication_factor=1)])
-        topic_future[temp_topic].result(timeout=10)
-        print(f"   ✓ Created temporary topic '{temp_topic}' for config testing")
-
-        # Suppress deprecation warnings for alter_configs
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=DeprecationWarning)
-            config_resource = ConfigResource('topic', temp_topic)
+        if metadata.topics:
+            test_topic_name = list(metadata.topics.keys())[0]
+            config_resource = ConfigResource('topic', test_topic_name)
             config_resource.set_config('retention.ms', '3600000')  # 1 hour
             config_future = admin_client.alter_configs([config_resource])
             config_future[config_resource].result(timeout=10)
-        print(f"   ✓ SUCCESS: Can alter topic configuration for '{temp_topic}'")
-        
-        # Clean up - delete the temporary topic
-        try:
-            delete_future = admin_client.delete_topics([temp_topic])
-            delete_future[temp_topic].result(timeout=10)
-            print(f"   ✓ Cleaned up temporary topic '{temp_topic}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Could not delete temporary topic '{temp_topic}': {e}")
-            
+            print(f"   ✓ SUCCESS: Can alter topic configuration for '{test_topic_name}'")
+        else:
+            print("   ⚠ SKIPPED: No topics available for config testing")
     except Exception as e:
         print(f"   ✗ FAILED: Cannot alter topic configuration: {e}")
-        # Try to clean up if topic was created but config alteration failed
-        try:
-            if 'temp_topic' in locals():
-                delete_future = admin_client.delete_topics([temp_topic])
-                delete_future[temp_topic].result(timeout=10)
-                print(f"   ✓ Cleaned up temporary topic '{temp_topic}' after failure")
-        except:
-            pass
-
-    # Test consumer group permissions
-    print(f"\n4. Testing consumer group permissions...")
-    try:
-        # Create a temporary topic for consumer group testing
-        temp_topic = f"consumer-test-{int(time.time())}"
-        temp_group = f"test-group-{int(time.time())}"
-        from confluent_kafka.admin import NewTopic
-        
-        # Create topic initially
-        topic_future = admin_client.create_topics([NewTopic(temp_topic, num_partitions=1, replication_factor=1)])
-        topic_future[temp_topic].result(timeout=10)
-        print(f"   ✓ Created temporary topic '{temp_topic}' for consumer group testing")
-        
-        # Test consumer group creation by creating a consumer and committing offsets
-        from confluent_kafka import Consumer, TopicPartition
-        
-        # Use the same configuration as the admin client
-        consumer_conf = conf.copy()
-        consumer_conf.update({
-            'group.id': temp_group,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,  # Manual commit for testing
-        })
-        
-        consumer = Consumer(consumer_conf)
-        consumer.subscribe([temp_topic])
-        
-        # Poll for a message to create the group
-        msg = consumer.poll(5.0)
-        if msg is None:
-            print(f"   ✓ No messages in topic, but consumer group '{temp_group}' was created")
-        
-        # Test committing offsets
-        try:
-            consumer.commit()
-            print(f"   ✓ SUCCESS: Can commit offsets for consumer group '{temp_group}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Cannot commit offsets: {e}")
-        
-        # Test offset manipulation via admin client
-        try:
-            # Get current offsets
-            offsets_result = admin_client.list_consumer_group_offsets([temp_group])
-            if temp_group in offsets_result:
-                print(f"   ✓ SUCCESS: Can list offsets for consumer group '{temp_group}'")
-            else:
-                print(f"   ⚠ WARNING: No offsets found for consumer group '{temp_group}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Cannot list consumer group offsets: {e}")
-        
-        # Properly close the consumer to leave the group
-        consumer.close()
-        print(f"   ✓ Closed consumer to leave group '{temp_group}'")
-        
-        # Wait a moment for the consumer to fully leave the group
-        time.sleep(2)
-        
-        # Test consumer group deletion (if supported)
-        try:
-            delete_groups_future = admin_client.delete_consumer_groups([temp_group])
-            delete_groups_future[temp_group].result(timeout=10)
-            print(f"   ✓ SUCCESS: Can delete consumer group '{temp_group}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Cannot delete consumer group '{temp_group}': {e}")
-            # This is often not supported in older Kafka versions
-        
-        # Clean up - delete the temporary topic
-        try:
-            delete_future = admin_client.delete_topics([temp_topic])
-            delete_future[temp_topic].result(timeout=10)
-            print(f"   ✓ Cleaned up temporary topic '{temp_topic}'")
-        except Exception as e:
-            print(f"   ⚠ WARNING: Could not delete temporary topic '{temp_topic}': {e}")
-            
-    except Exception as e:
-        print(f"   ✗ FAILED: Cannot test consumer group permissions: {e}")
-        # Try to clean up if topic was created but consumer group testing failed
-        try:
-            if 'temp_topic' in locals():
-                delete_future = admin_client.delete_topics([temp_topic])
-                delete_future[temp_topic].result(timeout=10)
-                print(f"   ✓ Cleaned up temporary topic '{temp_topic}' after failure")
-        except:
-            pass
 
 def audit_security_configs(admin_client, metadata):
     """Audit security-related configurations"""
@@ -408,7 +274,7 @@ def enumerate_sensitive_data(admin_client, metadata):
     else:
         print(f"\n✓ No obviously sensitive topic names found")
 
-def test_message_injection(admin_client, metadata, conf):
+def test_message_injection(admin_client, metadata):
     """Test ability to inject messages into topics"""
     print("\n" + "="*60)
     print("MESSAGE INJECTION TESTING")
@@ -419,10 +285,14 @@ def test_message_injection(admin_client, metadata, conf):
     try:
         if metadata.topics:
             test_topic = list(metadata.topics.keys())[0]
-            
-            # Use the same configuration as the admin client
-            producer_conf = conf.copy()
-            producer = Producer(producer_conf)
+            producer = Producer({
+                'bootstrap.servers': admin_client._impl._rd_kafka.conf_get('bootstrap.servers'),
+                'security.protocol': 'SSL',
+                'ssl.certificate.location': admin_client._impl._rd_kafka.conf_get('ssl.certificate.location'),
+                'ssl.key.location': admin_client._impl._rd_kafka.conf_get('ssl.key.location'),
+                'ssl.ca.location': admin_client._impl._rd_kafka.conf_get('ssl.ca.location'),
+                'ssl.endpoint.identification.algorithm': 'none',
+            })
             
             # Send a test message
             test_message = {
@@ -581,150 +451,6 @@ def browse_group(admin_client, group_name, max_messages=10, timeout=5.0):
     except Exception as e:
         print(f"\n✗ ERROR browsing group '{group_name}': {e}")
 
-def describe_consumer_group_details(admin_client, group_name):
-    """Get detailed information about a specific consumer group"""
-    print(f"\n" + "="*60)
-    print(f"CONSUMER GROUP DETAILS: {group_name}")
-    print("="*60)
-    
-    try:
-        # Get detailed consumer group information
-        print(f"\n1. Getting consumer group information...")
-        detailed_groups = admin_client.describe_consumer_groups([group_name])
-        group_info = detailed_groups[group_name].result(timeout=10)
-        
-        print(f"   ✓ Group ID: {group_name}")
-        print(f"   ✓ State: {group_info.state}")
-        print(f"   ✓ Protocol Type: {getattr(group_info, 'protocol_type', 'Unknown')}")
-        print(f"   ✓ Protocol: {getattr(group_info, 'protocol', 'Unknown')}")
-        print(f"   ✓ Members: {len(group_info.members)}")
-        
-        # Show member details
-        if group_info.members:
-            print(f"\n2. Member Details:")
-            for i, member in enumerate(group_info.members, 1):
-                print(f"   Member {i}:")
-                print(f"     ✓ Member ID: {member.member_id}")
-                print(f"     ✓ Client ID: {getattr(member, 'client_id', 'Unknown')}")
-                print(f"     ✓ Client Host: {getattr(member, 'client_host', 'Unknown')}")
-                print(f"     ✓ Session Timeout: {getattr(member, 'session_timeout_ms', 'Unknown')}ms")
-                print(f"     ✓ Rebalance Timeout: {getattr(member, 'rebalance_timeout_ms', 'Unknown')}ms")
-                
-                # Show partition assignments
-                if hasattr(member, 'member_metadata') and member.member_metadata:
-                    print(f"     ✓ Member Metadata: {len(member.member_metadata)} bytes")
-                
-                if hasattr(member, 'member_assignment') and member.member_assignment:
-                    print(f"     ✓ Partition Assignments:")
-                    try:
-                        # Try to decode assignment if possible
-                        assignments = member.member_assignment
-                        if hasattr(assignments, 'partition_assignments'):
-                            for assignment in assignments.partition_assignments:
-                                print(f"       - {assignment.topic}:{assignment.partition}")
-                        else:
-                            print(f"       - {len(member.member_assignment)} bytes of assignment data")
-                    except Exception as e:
-                        print(f"       - Assignment data (could not decode): {e}")
-                else:
-                    print(f"     ✓ No partition assignments")
-                print()
-        else:
-            print(f"\n2. Member Details:")
-            print(f"   ⚠ No active members in this consumer group")
-        
-        # Get committed offsets
-        print(f"3. Committed Offsets:")
-        try:
-            offsets_result = admin_client.list_consumer_group_offsets([group_name])
-            if group_name in offsets_result:
-                group_offsets = offsets_result[group_name]
-                if group_offsets:
-                    print(f"   ✓ Found {len(group_offsets)} partition assignments with offsets:")
-                    for (topic, partition), offset_info in group_offsets.items():
-                        print(f"     - {topic}[{partition}]: offset {offset_info.offset}")
-                        if hasattr(offset_info, 'metadata') and offset_info.metadata:
-                            print(f"       Metadata: {offset_info.metadata}")
-                else:
-                    print(f"   ⚠ No committed offsets found")
-            else:
-                print(f"   ⚠ No offset information available")
-        except Exception as e:
-            print(f"   ⚠ Could not retrieve offset information: {e}")
-        
-        # Show group summary
-        print(f"\n4. Group Summary:")
-        if group_info.state == 'Stable' and len(group_info.members) > 0:
-            print(f"   ✓ Group is healthy and active")
-            print(f"   ✓ {len(group_info.members)} consumer(s) are processing messages")
-        elif group_info.state == 'Empty':
-            print(f"   ⚠ Group is empty (no active consumers)")
-        elif group_info.state == 'PreparingRebalance':
-            print(f"   ⚠ Group is rebalancing (preparing)")
-        elif group_info.state == 'CompletingRebalance':
-            print(f"   ⚠ Group is rebalancing (completing)")
-        elif group_info.state == 'Dead':
-            print(f"   ✗ Group is dead (no members)")
-        else:
-            print(f"   ⚠ Group state: {group_info.state}")
-            
-    except Exception as e:
-        if "GROUP_ID_NOT_FOUND" in str(e) or "not found" in str(e).lower():
-            print(f"\n✗ ERROR: Consumer group '{group_name}' not found")
-            print(f"   💡 Use --list-consumer-groups to see available groups")
-        else:
-            print(f"\n✗ ERROR: Could not describe consumer group '{group_name}': {e}")
-
-def safely_delete_consumer_group(admin_client, group_name):
-    """Safely delete a consumer group only if it's empty (no active consumers)"""
-    print(f"\n" + "="*60)
-    print(f"SAFELY DELETING CONSUMER GROUP: {group_name}")
-    print("="*60)
-    
-    try:
-        # First, check if the group exists and get its details
-        print(f"\n1. Checking consumer group status...")
-        try:
-            detailed_groups = admin_client.describe_consumer_groups([group_name])
-            group_info = detailed_groups[group_name].result(timeout=10)
-            
-            print(f"   ✓ Group State: {group_info.state}")
-            print(f"   ✓ Members: {len(group_info.members)}")
-            
-            if len(group_info.members) > 0:
-                print(f"   ✗ CANNOT DELETE: Group has {len(group_info.members)} active member(s)")
-                print(f"   ⚠ WARNING: Deleting a group with active consumers can cause data loss")
-                print(f"   💡 Suggestion: Stop all consumers in the group first, then try again")
-                return False
-            else:
-                print(f"   ✓ Group is empty - safe to delete")
-                
-        except Exception as e:
-            print(f"   ⚠ WARNING: Could not get detailed group info: {e}")
-            print(f"   💡 Proceeding with deletion attempt...")
-        
-        # Attempt to delete the group
-        print(f"\n2. Attempting to delete consumer group...")
-        try:
-            delete_groups_future = admin_client.delete_consumer_groups([group_name])
-            delete_groups_future[group_name].result(timeout=10)
-            print(f"   ✓ SUCCESS: Consumer group '{group_name}' deleted successfully")
-            return True
-            
-        except Exception as e:
-            if "NON_EMPTY_GROUP" in str(e):
-                print(f"   ✗ FAILED: Group is not empty - cannot delete")
-                print(f"   💡 Suggestion: Stop all consumers in the group first")
-            elif "GROUP_ID_NOT_FOUND" in str(e):
-                print(f"   ✗ FAILED: Consumer group '{group_name}' not found")
-            else:
-                print(f"   ✗ FAILED: Could not delete consumer group: {e}")
-            return False
-            
-    except Exception as e:
-        print(f"\n✗ ERROR: {e}")
-        return False
-
 def produce_message(producer, topic, key=None, value=None, json_value=None):
     """Produce a message to a topic"""
     try:
@@ -755,48 +481,6 @@ def produce_message(producer, topic, key=None, value=None, json_value=None):
     except Exception as e:
         print(f"✗ Error producing message: {e}")
         return False
-
-def create_test_consumer_group(admin_client, conf, group_name, topic_name):
-    """Create a simple consumer group for testing purposes"""
-    print(f"\n" + "="*60)
-    print(f"CREATING TEST CONSUMER GROUP: {group_name}")
-    print("="*60)
-    
-    try:
-        # Create a topic if it doesn't exist
-        from confluent_kafka.admin import NewTopic
-        topic_future = admin_client.create_topics([NewTopic(topic_name, num_partitions=1, replication_factor=1)])
-        topic_future[topic_name].result(timeout=10)
-        print(f"   ✓ Created topic '{topic_name}' for testing")
-        
-        # Create a consumer and commit some offsets to establish the group
-        from confluent_kafka import Consumer
-        
-        consumer_conf = conf.copy()
-        consumer_conf.update({
-            'group.id': group_name,
-            'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,
-        })
-        
-        consumer = Consumer(consumer_conf)
-        consumer.subscribe([topic_name])
-        
-        # Poll briefly to create the group
-        msg = consumer.poll(2.0)
-        if msg is None:
-            print(f"   ✓ No messages in topic, but consumer group '{group_name}' was created")
-        
-        # Commit offsets to establish the group
-        consumer.commit()
-        print(f"   ✓ Committed offsets for group '{group_name}'")
-        
-        consumer.close()
-        print(f"   ✓ Consumer group '{group_name}' is now ready for testing")
-        print(f"   💡 Use --describe-consumer-group {group_name} to see details")
-        
-    except Exception as e:
-        print(f"   ✗ ERROR creating test consumer group: {e}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Kafka Client Tool')
@@ -837,11 +521,6 @@ def parse_args():
     parser.add_argument('--browse-group', help='Browse messages from an existing consumer group (without consuming)')
     parser.add_argument('--browse-max-messages', type=int, default=10, help='Maximum messages to browse from group (default: 10)')
     parser.add_argument('--browse-timeout', type=float, default=5.0, help='Browse timeout in seconds (default: 5.0)')
-    
-    # Consumer group management options
-    parser.add_argument('--delete-consumer-group', help='Safely delete a consumer group (only if no active consumers)')
-    parser.add_argument('--describe-consumer-group', help='Get detailed information about a specific consumer group')
-    parser.add_argument('--create-test-group', help='Create a test consumer group for testing purposes (format: group_name:topic_name)')
     
     # Penetration testing specific flags
     parser.add_argument('--test-permissions', action='store_true', help='Test various permissions (topic creation, deletion, etc.)')
@@ -1047,19 +726,19 @@ def main():
 
     # Run security tests if requested
     if args.full_security_audit:
-        test_permissions(admin_client, metadata, conf)
+        test_permissions(admin_client, metadata)
         audit_security_configs(admin_client, metadata)
         enumerate_sensitive_data(admin_client, metadata)
-        test_message_injection(admin_client, metadata, conf)
+        test_message_injection(admin_client, metadata)
     else:
         if args.test_permissions:
-            test_permissions(admin_client, metadata, conf)
+            test_permissions(admin_client, metadata)
         if args.audit_security:
             audit_security_configs(admin_client, metadata)
         if args.enumerate_sensitive:
             enumerate_sensitive_data(admin_client, metadata)
         if args.test_injection:
-            test_message_injection(admin_client, metadata, conf)
+            test_message_injection(admin_client, metadata)
 
     # Show topic configurations if requested
     if args.topic_configs or args.all:
@@ -1229,20 +908,6 @@ def main():
                     print(f"    Partition {partition}: offset={offset_info.offset}, timestamp={offset_info.timestamp}")
         except Exception as e:
             print(f"\nCould not fetch topic offsets: {e}")
-
-    # Consumer group management
-    if args.delete_consumer_group:
-        safely_delete_consumer_group(admin_client, args.delete_consumer_group)
-        return
-    
-    if args.describe_consumer_group:
-        describe_consumer_group_details(admin_client, args.describe_consumer_group)
-        return
-
-    if args.create_test_group:
-        group_name, topic_name = args.create_test_group.split(':')
-        create_test_consumer_group(admin_client, conf, group_name, topic_name)
-        return
 
 if __name__ == "__main__":
     main() 
