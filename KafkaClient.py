@@ -938,11 +938,6 @@ def main():
     # Configuration
     bootstrap_servers = args.server
     
-    # Validate arguments
-    if not args.no_tls and not args.client_cert:
-        print("Error: --client-cert is required when not using --no-tls")
-        return
-    
     # Build configuration based on TLS settings
     if args.no_tls:
         # Plaintext connection without TLS
@@ -953,18 +948,19 @@ def main():
         print(f"Connecting to {bootstrap_servers} using PLAINTEXT (no TLS)")
     else:
         # TLS/SSL connection
-        client_cert = args.client_cert
-        ca_cert = args.ca_cert if args.ca_cert else client_cert
-        
         conf = {
             'bootstrap.servers': bootstrap_servers,
             'security.protocol': 'SSL',
-            'ssl.certificate.location': client_cert,
-            'ssl.key.location': client_cert,
-            'ssl.ca.location': ca_cert,  # Use the same PEM if you don't care about CA
             'ssl.endpoint.identification.algorithm': 'none',  # Disable hostname verification
         }
-        print(f"Connecting to {bootstrap_servers} using SSL/TLS")
+        if args.ca_cert:
+            conf['ssl.ca.location'] = args.ca_cert
+        elif args.client_cert:
+            conf['ssl.ca.location'] = args.client_cert
+        if args.client_cert:
+            conf['ssl.certificate.location'] = args.client_cert
+            conf['ssl.key.location'] = args.client_cert
+        print(f"Connecting to {bootstrap_servers} using SSL/TLS" + (" with client certificate" if args.client_cert else " (no client certificate)"))
 
     # If subscribing to a topic, set up consumer
     if args.subscribe:
@@ -1081,7 +1077,7 @@ def main():
         print("  Some commands may not work due to metadata connection issues")
         print("  This may be due to broker configuration (advertised.listeners)")
         print("  Try fixing broker's server.properties:")
-        print("    advertised.listeners=PLAINTEXT://10.0.0.181:9092")
+        print("    advertised.listeners=PLAINTEXT://<BROKER_IP>:9092")
 
     # Handle topic listing based on options
     if args.list_topics:
@@ -1170,7 +1166,7 @@ def main():
                 print("  Cannot retrieve ACLs: Metadata connection failed")
                 print("  This may be due to broker configuration (advertised.listeners)")
                 print("  Try fixing broker's server.properties:")
-                print("    advertised.listeners=PLAINTEXT://10.0.0.181:9092")
+                print("    advertised.listeners=PLAINTEXT://<BROKER_IP>:9092")
                 return
                 
             from confluent_kafka.admin import AclBindingFilter, ResourceType, ResourcePatternType, AclOperation, AclPermissionType
@@ -1203,7 +1199,7 @@ def main():
             elif "Transport" in str(e) or "Timed out" in str(e):
                 print("  Connection issue - check broker configuration")
                 print("  Try fixing broker's server.properties:")
-                print("    advertised.listeners=PLAINTEXT://10.0.0.181:9092")
+                print("    advertised.listeners=PLAINTEXT://<BROKER_IP>:9092")
             else:
                 import traceback
                 print(f"Full traceback:")

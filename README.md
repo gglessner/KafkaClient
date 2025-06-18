@@ -313,11 +313,14 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 
 #### Basic Arguments
 - `server`: Kafka server address and port (positional argument)
-  - Example: `localhost:9093`, `10.0.0.181:9093`
-- `--client-cert`: Path to client certificate PEM file (required)
-  - Must contain both certificate and private key
+  - Example: `localhost:9093`
+- `--client-cert`: Path to client certificate PEM file (optional)
+  - If provided, must contain both certificate and private key
+  - If omitted, TLS will be used without client authentication (encryption only)
 - `--ca-cert`: Path to CA certificate PEM file (optional)
-  - If not provided, uses the client certificate file
+  - If not provided, uses the client certificate file if available
+  - If neither is provided, system CA certificates will be used
+- `--no-tls`: Connect without TLS/SSL encryption (plaintext)
 
 #### Topic Listing Arguments
 - `--list-topics`: List only topic names (no partition details)
@@ -713,3 +716,29 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 For issues and questions, please contact:
 - **Author**: Garland Glessner <gglessner@gmail.com>
 - **GitHub Issues**: [Create an issue](https://github.com/yourusername/KafkaClient/issues) 
+
+## TLS/SSL Usage
+
+You can connect to Kafka using TLS/SSL with or without a client certificate:
+
+- **With client certificate (mutual TLS):**
+  - Use `--client-cert <path/to/cert.pem>` to provide your client certificate (must contain both certificate and private key).
+  - Optionally, use `--ca-cert <path/to/ca.pem>` to specify a custom CA certificate for server verification.
+- **Without client certificate (encryption only):**
+  - Omit `--client-cert`. The connection will be encrypted, but the client will not authenticate with a certificate. The broker must be configured with `ssl.client.auth=none`.
+  - You may still use `--ca-cert` to specify a custom CA for server verification.
+
+**Example: TLS with client certificate**
+```bash
+python3 KafkaClient.py <server:port> --client-cert <path/to/cert.pem>
+```
+
+**Example: TLS without client certificate**
+```bash
+python3 KafkaClient.py <server:port>
+```
+
+**Example: TLS with custom CA only**
+```bash
+python3 KafkaClient.py <server:port> --ca-cert <path/to/ca.pem>
+``` 
