@@ -69,7 +69,7 @@ python3 KafkaClient.py <server:port> --client-cert <path/to/cert.pem>
 
 Example:
 ```bash
-python3 KafkaClient.py 10.0.0.181:9093 --client-cert valid_ee.decrypted.pem
+python3 KafkaClient.py localhost:9093 --client-cert valid_ee.decrypted.pem
 ```
 
 ### Topic Listing Options
