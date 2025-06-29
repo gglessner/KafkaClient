@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Kafka Client - Connect to Apache Kafka using SSL client certificates
+Kafka Client v2.0 - Connect to Apache Kafka using SSL client certificates
 
 Author: Garland Glessner <gglessner@gmail.com>
+Version: 2.0
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
