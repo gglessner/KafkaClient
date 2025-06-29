@@ -60,39 +60,69 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic Usage
+### **NEW: Argument Reorganization**
 
-Connect using a single PEM file containing both client certificate and private key:
+All command line arguments are now grouped by logical function with consistent prefixes for improved usability and discoverability. Legacy arguments are still supported (with deprecation warnings), but new users should use the grouped arguments below.
+
+### **Argument Groups Overview**
+
+| Group                | Prefix              | Example Argument                |
+|----------------------|--------------------|---------------------------------|
+| Connection/Security  | --connection-*     | --connection-tls                |
+| Topic Management     | --topic-*          | --topic-list, --topic-create    |
+| Message Production   | --produce-*        | --produce-message               |
+| Message Consumption  | --consume-*        | --consume-subscribe             |
+| Consumer Groups      | --group-*          | --group-list, --group-delete    |
+| Consumer Control     | --consumer-*       | --consumer-seek-offset          |
+| Cluster/Broker Mgmt  | --cluster-*        | --cluster-info                  |
+| Security/ACL         | --security-*       | --security-acl-list             |
+| Monitoring/Metrics   | --monitor-*        | --monitor-consumer-metrics      |
+| Transactions         | --transaction-*    | --transaction-begin             |
+
+### **Example Usage with New Arguments**
 
 ```bash
-python3 KafkaClient.py <server:port> --client-cert <path/to/cert.pem>
+# List topics
+python3 KafkaClient.py <server:port> --topic-list
+
+# Create a topic
+python3 KafkaClient.py <server:port> --topic-create mytopic:3:1
+
+# Produce a message
+python3 KafkaClient.py <server:port> --produce-message mytopic --produce-value "hello world"
+
+# Consume messages
+python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-from-beginning
+
+# List consumer groups
+python3 KafkaClient.py <server:port> --group-list
+
+# Show cluster info
+python3 KafkaClient.py <server:port> --cluster-info
+
+# Show security ACLs
+python3 KafkaClient.py <server:port> --security-acl-list
+```
+
+**Legacy arguments are still supported for backward compatibility, but will show deprecation warnings.**
+
+### Basic Usage
+
+Connect using PLAINTEXT (no TLS, default):
+
+```bash
+python3 KafkaClient.py <server:port>
+```
+
+Connect using SSL/TLS (must specify --connection-tls):
+
+```bash
+python3 KafkaClient.py <server:port> --connection-tls --connection-client-cert <path/to/cert.pem>
 ```
 
 Example:
 ```bash
-python3 KafkaClient.py localhost:9093 --client-cert valid_ee.decrypted.pem
-```
-
-### Topic Listing Options
-
-List only topic names (clean output):
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-topics
-```
-
-List topics with partition details:
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-topics-partitions
-```
-
-List consumer groups:
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-consumer-groups
-```
-
-List broker information:
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --list-brokers
+python3 KafkaClient.py localhost:9093 --connection-tls --connection-client-cert valid_ee.decrypted.pem
 ```
 
 ### Advanced Usage
@@ -208,7 +238,7 @@ CONSUMER GROUP DETAILS: my-consumer-group
    Member 1:
      ✓ Member ID: consumer-1-1234567890
      ✓ Client ID: my-consumer-app
-     ✓ Client Host: 192.168.1.100
+     ✓ Client Host: 192.168.x.x
      ✓ Session Timeout: 30000ms
      ✓ Partition Assignments:
        - my-topic[0]: partition 0
@@ -314,17 +344,24 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 #### Basic Arguments
 - `server`: Kafka server address and port (positional argument)
   - Example: `localhost:9093`
-- `--client-cert`: Path to client certificate PEM file (optional)
+- `--tls`: Use SSL/TLS connection (default is plaintext)
+- `--client-cert`: Path to client certificate PEM file (optional, only used with --tls)
   - If provided, must contain both certificate and private key
   - If omitted, TLS will be used without client authentication (encryption only)
-- `--ca-cert`: Path to CA certificate PEM file (optional)
+- `--ca-cert`: Path to CA certificate PEM file (optional, only used with --tls)
   - If not provided, uses the client certificate file if available
   - If neither is provided, system CA certificates will be used
-- `--no-tls`: Connect without TLS/SSL encryption (plaintext)
+- `--stick-to-broker`: Stay connected to the initial broker only (disable broker discovery and load balancing)
+  - Useful when you want to connect to a specific broker in a multi-broker cluster
+  - Prevents the client from automatically switching to other brokers
+  - Disables metadata refresh, reconnection backoff, and load balancing
+  - Recommended when you need consistent connection to a particular broker
 
 #### Topic Listing Arguments
 - `--list-topics`: List only topic names (no partition details)
 - `--list-topics-partitions`: List topics with partition details (leader, replicas, ISRs)
+- `--add-topic`: Create a new topic (format: topic_name:partitions:replication_factor)
+- `--delete-topic`: Delete a topic
 - `--list-consumer-groups`: List consumer groups
 - `--list-brokers`: List broker information
 
@@ -360,6 +397,43 @@ python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
 
 #### **NEW: Scan for Available Messages**
 - `--scan-available-messages`: Scan all consumer groups and topics for available (unconsumed) messages without consuming them
+
+#### **NEW: Advanced Kafka Administration Arguments**
+- `--create-acl`: Create an ACL (format: resource_type:resource_name:principal:operation:permission)
+- `--delete-acl`: Delete an ACL (format: resource_type:resource_name:principal:operation:permission)
+- `--add-partitions`: Add partitions to topic (format: topic_name:new_partition_count)
+- `--alter-topic-config`: Alter topic configuration (format: topic_name:config_key=value)
+- `--delete-records`: Delete records from topic (format: topic_name:partition:offset)
+- `--elect-leaders`: Elect leaders for partitions (format: topic_name:partition)
+- `--alter-group-offsets`: Alter consumer group offsets (format: group_name:topic:partition:offset)
+- `--alter-user-credentials`: Alter user SCRAM credentials (format: username:password:mechanism)
+- `--delete-user-credentials`: Delete user SCRAM credentials (format: username:mechanism)
+- `--describe-user-credentials`: Describe user SCRAM credentials (username optional)
+
+#### **NEW: Advanced Consumer Control Arguments**
+- `--seek-to-offset`: Seek to specific offset (format: topic:partition:offset)
+- `--seek-to-timestamp`: Seek to specific timestamp (format: topic:partition:timestamp)
+- `--pause-partitions`: Pause partitions (format: topic:partition_list)
+- `--resume-partitions`: Resume partitions (format: topic:partition_list)
+- `--get-watermarks`: Get watermark offsets (format: topic:partition)
+
+#### **NEW: Batch Operations Arguments**
+- `--batch-produce`: Batch produce messages (format: topic:file_path)
+- `--batch-consume`: Batch consume messages (format: topic:max_messages:timeout)
+
+#### **NEW: Monitoring and Metrics Arguments**
+- `--show-consumer-metrics`: Show consumer metrics
+- `--show-producer-metrics`: Show producer metrics
+- `--show-broker-health`: Show broker health information
+- `--show-consumer-lag`: Show consumer lag for group
+
+#### **NEW: Transaction Support Arguments**
+- `--begin-transaction`: Begin a transaction
+- `--commit-transaction`: Commit current transaction
+- `--abort-transaction`: Abort current transaction
+
+#### **NEW: Isolation Level Arguments**
+- `--isolation-level`: Set consumer isolation level (choices: read_committed, read_uncommitted)
 
 ### Help
 
@@ -741,4 +815,207 @@ python3 KafkaClient.py <server:port>
 **Example: TLS with custom CA only**
 ```bash
 python3 KafkaClient.py <server:port> --ca-cert <path/to/ca.pem>
-``` 
+```
+
+### **NEW: Topic Management**
+
+Create new topics with custom partitions and replication:
+
+```bash
+# Create a topic (format: topic_name:partitions:replication_factor)
+python3 KafkaClient.py <server:port> --add-topic my-topic:3:1
+```
+
+Delete existing topics:
+
+```bash
+# Delete a topic
+python3 KafkaClient.py <server:port> --delete-topic my-topic
+```
+
+**Safety Features:**
+- **Existence Check**: Verifies topic exists before attempting deletion
+- **Empty Topic Check**: Ensures topic is empty before deletion
+- **Clear Error Messages**: Explains why deletion failed
+- **Non-destructive**: Only deletes if topic is empty and safe to remove
+
+**Example Output for Create:**
+```
+============================================================
+CREATING TOPIC
+============================================================
+   Topic Name: my-topic
+   Partitions: 3
+   Replication Factor: 1
+   [+] SUCCESS: Topic 'my-topic' created successfully
+```
+
+**Example Output for Delete:**
+```
+============================================================
+DELETING TOPIC
+============================================================
+   Topic Name: my-topic
+   [+] SUCCESS: Topic 'my-topic' deleted successfully
+```
+
+### **NEW: Consumer Group Management**
+
+#### **NEW: Advanced Kafka Administration**
+
+#### **ACL (Access Control List) Management**
+
+Create and manage Access Control Lists for fine-grained permissions:
+
+```bash
+# Create an ACL (format: resource_type:resource_name:principal:operation:permission)
+python3 KafkaClient.py <server:port> --create-acl topic:my-topic:User:alice:ALLOW:READ
+
+# Delete an ACL
+python3 KafkaClient.py <server:port> --delete-acl topic:my-topic:User:alice:ALLOW:READ
+```
+
+**Resource Types:** `topic`, `group`, `broker`, `cluster`, `transactional_id`
+**Operations:** `ALL`, `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `CLUSTER_ACTION`, `DESCRIBE_CONFIGS`, `ALTER_CONFIGS`, `IDEMPOTENT_WRITE`
+**Permissions:** `ALLOW`, `DENY`
+
+#### **Advanced Topic Management**
+
+```bash
+# Add partitions to existing topic
+python3 KafkaClient.py <server:port> --add-partitions my-topic:10
+
+# Alter topic configuration
+python3 KafkaClient.py <server:port> --alter-topic-config my-topic:retention.ms=86400000
+
+# Delete records from topic (truncate to specific offset)
+python3 KafkaClient.py <server:port> --delete-records my-topic:0:12345
+
+# Elect leaders for specific partitions
+python3 KafkaClient.py <server:port> --elect-leaders my-topic:0
+```
+
+#### **Consumer Group Offset Management**
+
+```bash
+# Alter consumer group offsets
+python3 KafkaClient.py <server:port> --alter-group-offsets my-group:my-topic:0:12345
+```
+
+#### **User SCRAM Credential Management**
+
+```bash
+# Alter user SCRAM credentials
+python3 KafkaClient.py <server:port> --alter-user-credentials alice:mypassword:SCRAM-SHA-256
+
+# Delete user SCRAM credentials
+python3 KafkaClient.py <server:port> --delete-user-credentials alice:SCRAM-SHA-256
+
+# Describe user SCRAM credentials
+python3 KafkaClient.py <server:port> --describe-user-credentials alice
+```
+
+**Supported Mechanisms:** `SCRAM-SHA-256`, `SCRAM-SHA-512`
+
+### **NEW: Advanced Consumer Control**
+
+#### **Offset and Timestamp Seeking**
+
+```bash
+# Seek to specific offset
+python3 KafkaClient.py <server:port> --seek-to-offset my-topic:0:12345
+
+# Seek to specific timestamp (Unix timestamp in milliseconds)
+python3 KafkaClient.py <server:port> --seek-to-timestamp my-topic:0:1705312200000
+```
+
+#### **Partition Control**
+
+```bash
+# Pause consumption from specific partitions
+python3 KafkaClient.py <server:port> --pause-partitions my-topic:0,1,2
+
+# Resume consumption from specific partitions
+python3 KafkaClient.py <server:port> --resume-partitions my-topic:0,1,2
+```
+
+#### **Watermark Information**
+
+```bash
+# Get low and high watermark offsets
+python3 KafkaClient.py <server:port> --get-watermarks my-topic:0
+```
+
+### **NEW: Batch Operations**
+
+#### **Batch Message Production**
+
+```bash
+# Batch produce messages from file (one message per line)
+python3 KafkaClient.py <server:port> --batch-produce my-topic:messages.txt
+```
+
+#### **Batch Message Consumption**
+
+```bash
+# Batch consume messages with limits
+python3 KafkaClient.py <server:port> --batch-consume my-topic:100:30
+# Format: topic:max_messages:timeout_seconds
+```
+
+### **NEW: Monitoring and Metrics**
+
+#### **Consumer Metrics**
+
+```bash
+# Show consumer metrics and assignment information
+python3 KafkaClient.py <server:port> --show-consumer-metrics
+```
+
+#### **Producer Metrics**
+
+```bash
+# Show producer metrics
+python3 KafkaClient.py <server:port> --show-producer-metrics
+```
+
+#### **Broker Health**
+
+```bash
+# Show broker health information
+python3 KafkaClient.py <server:port> --show-broker-health
+```
+
+#### **Consumer Lag**
+
+```bash
+# Show consumer lag for specific group
+python3 KafkaClient.py <server:port> --show-consumer-lag my-group
+```
+
+### **NEW: Transaction Support**
+
+```bash
+# Begin a transaction
+python3 KafkaClient.py <server:port> --begin-transaction
+
+# Commit current transaction
+python3 KafkaClient.py <server:port> --commit-transaction
+
+# Abort current transaction
+python3 KafkaClient.py <server:port> --abort-transaction
+```
+
+### **NEW: Isolation Level Control**
+
+```bash
+# Set consumer isolation level
+python3 KafkaClient.py <server:port> --isolation-level read_committed --subscribe my-topic
+python3 KafkaClient.py <server:port> --isolation-level read_uncommitted --subscribe my-topic
+```
+
+**Isolation Levels:**
+- `read_committed`: Only read committed messages (default)
+- `read_uncommitted`: Read all messages including uncommitted ones
+
+### **NEW: Penetration Testing & Security Assessment** 
