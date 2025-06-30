@@ -192,7 +192,7 @@ python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-max-
 python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-group-id my-group --consumer-timeout 2.0
 
 # Subscribe to topics with wildcard
-python3 KafkaClient.py <server:port> --consume-subscribe-wildcard test-
+python3 KafkaClient.py <server:port> --topic-subscribe-wildcard test-
 ```
 
 ### Consumer Group Management

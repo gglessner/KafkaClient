@@ -1629,6 +1629,54 @@ def elect_leaders(admin_client, election_spec):
         print(f"   [-] ERROR: Could not elect leader: {e}")
         return False
 
+def subscribe_to_wildcard_topics(admin_client, conf, prefix):
+    """Subscribe to topics matching a prefix (wildcard)"""
+    print("=" * 60)
+    print("SUBSCRIBING TO WILDCARD TOPICS")
+    print("=" * 60)
+    
+    try:
+        print(f"   Prefix: {prefix}")
+        
+        # Find topics matching the prefix
+        matching_topics = find_topics_by_prefix(admin_client, prefix)
+        
+        if not matching_topics:
+            print(f"   [-] ERROR: No topics found starting with prefix '{prefix}'")
+            return False
+        
+        print(f"   [+] Found {len(matching_topics)} topics matching prefix '{prefix}':")
+        for topic in matching_topics:
+            print(f"     - {topic}")
+        
+        # Create consumer configuration
+        from confluent_kafka import Consumer
+        import signal
+        
+        consumer_conf = conf.copy()
+        consumer_conf.update({
+            'group.id': f'wildcard-subscriber-{prefix}',
+            'auto.offset.reset': 'earliest',
+        })
+        
+        consumer = Consumer(consumer_conf)
+        consumer.subscribe(matching_topics)
+        
+        # Set up signal handler for graceful shutdown
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        print(f"   [+] SUCCESS: Subscribed to {len(matching_topics)} topics")
+        print(f"   [INFO] Press Ctrl+C to stop consuming")
+        
+        # Start consuming messages
+        subscribe_messages(consumer, matching_topics, max_messages=None, timeout=1.0)
+        
+        return True
+        
+    except Exception as e:
+        print(f"   [-] ERROR: Could not subscribe to wildcard topics: {e}")
+        return False
+
 def alter_consumer_group_offsets(admin_client, offset_spec):
     """Alter consumer group offsets"""
     print("=" * 60)
@@ -2245,6 +2293,7 @@ def parse_args():
     topic_group.add_argument('--topic-elect-leaders', help='Elect leaders for partitions (format: topic_name:partition)')
     topic_group.add_argument('--topic-configs', action='store_true', help='Show topic configurations')
     topic_group.add_argument('--topic-offsets', action='store_true', help='Show topic offsets')
+    topic_group.add_argument('--topic-subscribe-wildcard', help='Subscribe to topics matching a prefix (wildcard)')
     
     # =============================================================================
     # MESSAGE PRODUCTION GROUP (--produce-*)
@@ -2266,7 +2315,6 @@ def parse_args():
     
     # Consumption arguments
     consume_group.add_argument('--consume-subscribe', help='Subscribe to a topic and read messages')
-    consume_group.add_argument('--consume-subscribe-wildcard', help='Subscribe to topics matching a prefix (wildcard)')
     consume_group.add_argument('--consume-batch', help='Batch consume messages (format: topic:max_messages:timeout)')
     consume_group.add_argument('--consume-scan-available', action='store_true', help='Scan for available messages in topics')
     
@@ -2451,44 +2499,7 @@ def main():
         subscribe_messages(consumer, args.consume_subscribe, args.consumer_max_messages, args.consumer_timeout)
         return
 
-    # If subscribing to topics with wildcard, set up consumer
-    if args.consume_subscribe_wildcard:
-        # Admin client for topic discovery
-        admin_client = AdminClient(conf)
-        
-        # Find topics matching the prefix
-        matching_topics = find_topics_by_prefix(admin_client, args.consume_subscribe_wildcard)
-        
-        if not matching_topics:
-            print(f"No topics found starting with prefix '{args.consume_subscribe_wildcard}'")
-            return
-        
-        print(f"Found {len(matching_topics)} topics matching prefix '{args.consume_subscribe_wildcard}':")
-        for topic in matching_topics:
-            print(f"  - {topic}")
-        
-        consumer_conf = conf.copy()
-        consumer_conf.update({
-            'group.id': args.consumer_group_id,
-            'auto.offset.reset': 'earliest' if args.consumer_from_beginning else 'latest',
-        })
-        
-        # Add additional broker-sticking config for consumers
-        if args.connection_stick_to_broker:
-            consumer_conf.update({
-                'enable.auto.commit': 'false',  # Disable auto commit to avoid broker switching
-                'auto.commit.interval.ms': '0',  # Disable auto commit interval
-            })
-        
-        consumer = Consumer(consumer_conf)
-        consumer.subscribe(matching_topics)
-        
-        # Set up signal handler for graceful shutdown
-        signal.signal(signal.SIGINT, signal_handler)
-        
-        # Start consuming
-        subscribe_messages(consumer, matching_topics, args.consumer_max_messages, args.consumer_timeout)
-        return
+
 
     # If browsing a consumer group, set up browser
     if args.group_browse:
@@ -2876,6 +2887,10 @@ def main():
     
     if args.topic_elect_leaders:
         elect_leaders(admin_client, args.topic_elect_leaders)
+        return
+    
+    if args.topic_subscribe_wildcard:
+        subscribe_to_wildcard_topics(admin_client, conf, args.topic_subscribe_wildcard)
         return
     
     # Consumer Group Management
