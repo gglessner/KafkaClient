@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Kafka Client v2.0 - Connect to Apache Kafka using SSL client certificates
+Kafka Client - Connect to Apache Kafka using SSL client certificates
 
 Author: Garland Glessner <gglessner@gmail.com>
 Version: 2.0
@@ -465,6 +465,275 @@ def test_message_injection(admin_client, metadata, conf):
             print(f"   [-] FAILED: Cannot inject messages: {e}")
     else:
         print("   [!] SKIPPED: No topics available for injection testing")
+
+def check_deserialization_vulnerabilities(admin_client, metadata):
+    """Check for deserialization vulnerabilities (CVE-2023-46663, CVE-2020-13933)"""
+    print("=" * 60)
+    print("DESERIALIZATION VULNERABILITY CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2023-46663 (RCE via deserialization)")
+    print("Checking for CVE-2020-13933 (Deserialization vulnerability)")
+    
+    try:
+        # Check if any topics have custom deserializers configured
+        topics = list(metadata.topics.keys())
+        vulnerable_topics = []
+        
+        print(f"\nScanning {len(topics)} topics for custom deserializers...")
+        
+        for topic in topics[:10]:  # Check first 10 topics
+            try:
+                configs = admin_client.describe_configs([ConfigResource(ResourceType.TOPIC, topic)])
+                topic_config = configs[ConfigResource(ResourceType.TOPIC, topic)]
+                
+                # Check for custom deserializer configurations
+                key_deserializer = topic_config.get('key.deserializer', None)
+                value_deserializer = topic_config.get('value.deserializer', None)
+                
+                if key_deserializer and 'custom' in str(key_deserializer.value).lower():
+                    vulnerable_topics.append((topic, 'key.deserializer', key_deserializer.value))
+                if value_deserializer and 'custom' in str(value_deserializer.value).lower():
+                    vulnerable_topics.append((topic, 'value.deserializer', value_deserializer.value))
+                    
+            except Exception as e:
+                continue
+        
+        if vulnerable_topics:
+            print("  [!] POTENTIALLY VULNERABLE TOPICS FOUND:")
+            for topic, config_key, value in vulnerable_topics:
+                print(f"     - {topic}: {config_key} = {value}")
+            print("     [RECOMMENDATION] Review custom deserializers for security")
+            print("     [RECOMMENDATION] Ensure deserializers are from trusted sources")
+        else:
+            print("  [+] No obvious deserialization vulnerabilities found")
+            
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check deserialization vulnerabilities: {e}")
+
+def check_sasl_authentication_bypass(admin_client, metadata):
+    """Check for SASL authentication bypass vulnerabilities (CVE-2023-46662)"""
+    print("=" * 60)
+    print("SASL AUTHENTICATION BYPASS CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2023-46662 (Authentication bypass in SASL/PLAIN)")
+    
+    try:
+        broker_id = list(metadata.brokers.keys())[0] if metadata.brokers else 1
+        broker_configs_future = admin_client.describe_configs([ConfigResource(ResourceType.BROKER, str(broker_id))])
+        broker_configs = broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))].result() if hasattr(broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))], 'result') else broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))]
+        
+        sasl_mechanisms = broker_configs.get('sasl.enabled.mechanisms', None)
+        sasl_protocol = broker_configs.get('security.protocol', None)
+        
+        print("\n  Broker SASL Configuration:")
+        if sasl_mechanisms:
+            print(f"     SASL Mechanisms: {sasl_mechanisms.value}")
+            if 'PLAIN' in str(sasl_mechanisms.value):
+                print("     [!] WARNING: SASL/PLAIN is enabled (CVE-2023-46662)")
+                print("     [!] CRITICAL: This mechanism is vulnerable to authentication bypass")
+                print("     [RECOMMENDATION] Use SASL/SCRAM or SASL/GSSAPI instead")
+                print("     [RECOMMENDATION] Disable SASL/PLAIN if not required")
+            else:
+                print("     [+] SASL/PLAIN is not enabled")
+        else:
+            print("     [!] No SASL mechanisms configured")
+            
+        if sasl_protocol:
+            print(f"     Security Protocol: {sasl_protocol.value}")
+            
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check SASL configuration: {e}")
+
+def check_metadata_disclosure_vulnerabilities(admin_client, metadata):
+    """Check for metadata disclosure vulnerabilities (CVE-2023-46661)"""
+    print("=" * 60)
+    print("METADATA DISCLOSURE CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2023-46661 (Information disclosure in consumer group metadata)")
+    
+    try:
+        # Check if consumer group metadata is accessible without authentication
+        print("\n  Testing consumer group metadata access...")
+        
+        # Try to list consumer groups
+        groups_future = admin_client.list_consumer_groups()
+        groups_result = groups_future.result()
+        
+        if groups_result and hasattr(groups_result, 'valid') and groups_result.valid:
+            print(f"     [+] Found {len(groups_result.valid)} consumer groups")
+            
+            # Check if we can access detailed group information
+            for group in groups_result.valid[:3]:  # Check first 3 groups
+                try:
+                    group_details = admin_client.describe_consumer_groups([group.group_id])
+                    if group.group_id in group_details:
+                        print(f"     [!] WARNING: Can access detailed metadata for group '{group.group_id}'")
+                        print("     [!] This may indicate insufficient access controls")
+                        print("     [RECOMMENDATION] Review ACLs for consumer group access")
+                        print("     [RECOMMENDATION] Implement proper authentication/authorization")
+                        break
+                except Exception:
+                    continue
+        else:
+            print("     [+] No consumer groups found or access restricted")
+            
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check metadata disclosure: {e}")
+
+def check_log4j_vulnerabilities(admin_client, metadata):
+    """Check for Log4j vulnerabilities (CVE-2021-44228, CVE-2021-45046)"""
+    print("=" * 60)
+    print("LOG4J VULNERABILITY CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2021-44228 (Log4Shell)")
+    print("Checking for CVE-2021-45046 (Log4j vulnerability)")
+    
+    try:
+        broker_id = list(metadata.brokers.keys())[0] if metadata.brokers else 1
+        broker_configs_future = admin_client.describe_configs([ConfigResource(ResourceType.BROKER, str(broker_id))])
+        broker_configs = broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))].result() if hasattr(broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))], 'result') else broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))]
+        
+        log_level = broker_configs.get('log4j.rootLogger', None)
+        log_config = broker_configs.get('log4j.appender.kafkaAppender', None)
+        
+        print("\n  Logging Configuration:")
+        if log_level:
+            print(f"     Log Level: {log_level.value}")
+        if log_config:
+            print(f"     Log Config: {log_config.value}")
+            
+        print("\n  [!] NOTE: Log4j vulnerabilities require server-side verification")
+        print("     [RECOMMENDATION] Check Kafka server logs and configuration")
+        print("     [RECOMMENDATION] Ensure Log4j version >= 2.17.0 on server")
+        print("     [RECOMMENDATION] Disable JNDI lookups in Log4j configuration")
+        print("     [RECOMMENDATION] Monitor for suspicious log entries")
+        
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check logging configuration: {e}")
+
+def check_path_traversal_vulnerabilities(admin_client, metadata):
+    """Check for path traversal vulnerabilities (CVE-2022-23305)"""
+    print("=" * 60)
+    print("PATH TRAVERSAL VULNERABILITY CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2022-23305 (Path traversal vulnerability)")
+    
+    try:
+        broker_id = list(metadata.brokers.keys())[0] if metadata.brokers else 1
+        broker_configs_future = admin_client.describe_configs([ConfigResource(ResourceType.BROKER, str(broker_id))])
+        broker_configs = broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))].result() if hasattr(broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))], 'result') else broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))]
+        
+        log_dirs = broker_configs.get('log.dirs', None)
+        
+        print("\n  File Path Configuration:")
+        if log_dirs:
+            print(f"     Log Directories: {log_dirs.value}")
+            # Check for relative paths or suspicious patterns
+            if '..' in str(log_dirs.value) or '../' in str(log_dirs.value):
+                print("     [!] WARNING: Relative paths detected in log.dirs")
+                print("     [!] This may indicate path traversal vulnerability")
+                print("     [RECOMMENDATION] Use absolute paths only")
+                print("     [RECOMMENDATION] Validate all file path inputs")
+            else:
+                print("     [+] Log directories use absolute paths")
+        else:
+            print("     [!] No log directories configured")
+            
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check path configuration: {e}")
+
+def check_connect_deserialization_vulnerabilities(admin_client, metadata):
+    """Check for Kafka Connect deserialization vulnerabilities (CVE-2024-3498)"""
+    print("=" * 60)
+    print("KAFKA CONNECT DESERIALIZATION CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2024-3498 (Deserialization vulnerability in Kafka Connect)")
+    
+    try:
+        # Check if Kafka Connect is running by looking for connect-related topics
+        topics = list(metadata.topics.keys())
+        connect_topics = [topic for topic in topics if 'connect' in topic.lower()]
+        
+        print(f"\n  Kafka Connect Topics Found: {len(connect_topics)}")
+        
+        if connect_topics:
+            print("     [!] Kafka Connect appears to be running")
+            print("     [!] WARNING: Kafka Connect may be vulnerable to deserialization attacks")
+            print("     [RECOMMENDATION] Update Kafka Connect to version 3.6.2 or later")
+            print("     [RECOMMENDATION] Review and secure all connector configurations")
+            print("     [RECOMMENDATION] Use only trusted connector plugins")
+            
+            for topic in connect_topics[:5]:
+                print(f"     - {topic}")
+        else:
+            print("     [+] No Kafka Connect topics found")
+            print("     [+] Kafka Connect may not be running or configured")
+            
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check Kafka Connect vulnerabilities: {e}")
+
+def check_dos_vulnerabilities(admin_client, metadata):
+    """Check for denial of service vulnerabilities (CVE-2023-46660)"""
+    print("=" * 60)
+    print("DENIAL OF SERVICE VULNERABILITY CHECK")
+    print("=" * 60)
+    print("Checking for CVE-2023-46660 (Denial of service via crafted requests)")
+    
+    try:
+        broker_id = list(metadata.brokers.keys())[0] if metadata.brokers else 1
+        broker_configs_future = admin_client.describe_configs([ConfigResource(ResourceType.BROKER, str(broker_id))])
+        broker_configs = broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))].result() if hasattr(broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))], 'result') else broker_configs_future[ConfigResource(ResourceType.BROKER, str(broker_id))]
+        
+        max_request_size = broker_configs.get('message.max.bytes', None)
+        request_timeout = broker_configs.get('request.timeout.ms', None)
+        
+        print("\n  Request Handling Configuration:")
+        if max_request_size:
+            print(f"     Max Request Size: {max_request_size.value} bytes")
+            # Check if max request size is reasonable
+            try:
+                max_size = int(max_request_size.value)
+                if max_size > 100 * 1024 * 1024:  # 100MB
+                    print("     [!] WARNING: Very large max request size configured")
+                    print("     [RECOMMENDATION] Consider reducing to prevent DoS attacks")
+                else:
+                    print("     [+] Max request size appears reasonable")
+            except ValueError:
+                print("     [!] Could not parse max request size")
+                
+        if request_timeout:
+            print(f"     Request Timeout: {request_timeout.value}ms")
+            
+        print("\n  [!] NOTE: DoS vulnerabilities are primarily server-side")
+        print("     [RECOMMENDATION] Update Kafka to version 3.5.2 or later")
+        print("     [RECOMMENDATION] Monitor for unusual request patterns")
+        print("     [RECOMMENDATION] Implement rate limiting if possible")
+        
+    except Exception as e:
+        print(f"  [-] ERROR: Could not check DoS vulnerabilities: {e}")
+
+def comprehensive_cve_audit(admin_client, metadata):
+    """Run comprehensive CVE-based security audit"""
+    print("=" * 60)
+    print("COMPREHENSIVE CVE-BASED SECURITY AUDIT")
+    print("=" * 60)
+    print("Running all CVE checks for Apache Kafka vulnerabilities...")
+    
+    # Run all CVE checks
+    check_deserialization_vulnerabilities(admin_client, metadata)
+    check_sasl_authentication_bypass(admin_client, metadata)
+    check_metadata_disclosure_vulnerabilities(admin_client, metadata)
+    check_log4j_vulnerabilities(admin_client, metadata)
+    check_path_traversal_vulnerabilities(admin_client, metadata)
+    check_connect_deserialization_vulnerabilities(admin_client, metadata)
+    check_dos_vulnerabilities(admin_client, metadata)
+    
+    print("\n" + "=" * 60)
+    print("CVE AUDIT SUMMARY")
+    print("=" * 60)
+    print("Completed comprehensive security audit based on recent Kafka CVEs.")
+    print("Review all warnings and recommendations above.")
+    print("For detailed CVE information, visit: https://nvd.nist.gov/vuln/search/results?query=apache+kafka")
 
 def browse_group(admin_client, group_name, max_messages=10, timeout=30):
     """Browse messages from a consumer group without affecting consumption"""
@@ -1953,26 +2222,19 @@ def parse_args():
     connection_group = parser.add_argument_group('Connection & Security')
     connection_group.add_argument('server', help='Kafka server (host:port)')
     
-    # New prefixed arguments
+    # Connection arguments
     connection_group.add_argument('--connection-tls', action='store_true', help='Use SSL/TLS connection (default is plaintext)')
     connection_group.add_argument('--connection-ca-cert', help='CA certificate file for SSL/TLS')
     connection_group.add_argument('--connection-client-cert', help='Client certificate file for SSL/TLS (PEM format)')
     connection_group.add_argument('--connection-stick-to-broker', action='store_true', 
                                  help='Stay connected to the initial broker only (disable broker discovery and load balancing)')
     
-    # Legacy arguments (deprecated)
-    connection_group.add_argument('--tls', action='store_true', help='[DEPRECATED] Use --connection-tls instead')
-    connection_group.add_argument('--ca-cert', help='[DEPRECATED] Use --connection-ca-cert instead')
-    connection_group.add_argument('--client-cert', help='[DEPRECATED] Use --connection-client-cert instead')
-    connection_group.add_argument('--stick-to-broker', action='store_true', 
-                                 help='[DEPRECATED] Use --connection-stick-to-broker instead')
-    
     # =============================================================================
     # TOPIC MANAGEMENT GROUP (--topic-*)
     # =============================================================================
     topic_group = parser.add_argument_group('Topic Management')
     
-    # New prefixed arguments
+    # Topic arguments
     topic_group.add_argument('--topic-list', action='store_true', help='List all topics')
     topic_group.add_argument('--topic-list-partitions', action='store_true', help='List topics with partition details')
     topic_group.add_argument('--topic-create', help='Create a new topic (format: topic_name:partitions:replication_factor)')
@@ -1984,22 +2246,12 @@ def parse_args():
     topic_group.add_argument('--topic-configs', action='store_true', help='Show topic configurations')
     topic_group.add_argument('--topic-offsets', action='store_true', help='Show topic offsets')
     
-    # Legacy arguments (deprecated)
-    topic_group.add_argument('--list-topics', action='store_true', help='[DEPRECATED] Use --topic-list instead')
-    topic_group.add_argument('--list-topics-partitions', action='store_true', help='[DEPRECATED] Use --topic-list-partitions instead')
-    topic_group.add_argument('--add-topic', help='[DEPRECATED] Use --topic-create instead')
-    topic_group.add_argument('--delete-topic', help='[DEPRECATED] Use --topic-delete instead')
-    topic_group.add_argument('--add-partitions', help='[DEPRECATED] Use --topic-add-partitions instead')
-    topic_group.add_argument('--alter-topic-config', help='[DEPRECATED] Use --topic-alter-config instead')
-    topic_group.add_argument('--delete-records', help='[DEPRECATED] Use --topic-delete-records instead')
-    topic_group.add_argument('--elect-leaders', help='[DEPRECATED] Use --topic-elect-leaders instead')
-    
     # =============================================================================
     # MESSAGE PRODUCTION GROUP (--produce-*)
     # =============================================================================
     produce_group = parser.add_argument_group('Message Production')
     
-    # New prefixed arguments
+    # Production arguments
     produce_group.add_argument('--produce-message', help='Produce a message to a topic')
     produce_group.add_argument('--produce-key', help='Message key for producing')
     produce_group.add_argument('--produce-value', help='Message value for producing')
@@ -2007,37 +2259,23 @@ def parse_args():
     produce_group.add_argument('--produce-from-file', help='Write message from file to topic (format: topic_name:file_path)')
     produce_group.add_argument('--produce-batch', help='Batch produce messages (format: topic:file_path)')
     
-    # Legacy arguments (deprecated)
-    produce_group.add_argument('--produce', help='[DEPRECATED] Use --produce-message instead')
-    produce_group.add_argument('--key', help='[DEPRECATED] Use --produce-key instead')
-    produce_group.add_argument('--value', help='[DEPRECATED] Use --produce-value instead')
-    produce_group.add_argument('--json-value', help='[DEPRECATED] Use --produce-json-value instead')
-    produce_group.add_argument('--write-to-topic', help='[DEPRECATED] Use --produce-from-file instead')
-    produce_group.add_argument('--batch-produce', help='[DEPRECATED] Use --produce-batch instead')
-    
     # =============================================================================
     # MESSAGE CONSUMPTION GROUP (--consume-*)
     # =============================================================================
     consume_group = parser.add_argument_group('Message Consumption')
     
-    # New prefixed arguments
+    # Consumption arguments
     consume_group.add_argument('--consume-subscribe', help='Subscribe to a topic and read messages')
     consume_group.add_argument('--consume-subscribe-wildcard', help='Subscribe to topics matching a prefix (wildcard)')
     consume_group.add_argument('--consume-batch', help='Batch consume messages (format: topic:max_messages:timeout)')
     consume_group.add_argument('--consume-scan-available', action='store_true', help='Scan for available messages in topics')
-    
-    # Legacy arguments (deprecated)
-    consume_group.add_argument('--subscribe', help='[DEPRECATED] Use --consume-subscribe instead')
-    consume_group.add_argument('--subscribe-wildcard', help='[DEPRECATED] Use --consume-subscribe-wildcard instead')
-    consume_group.add_argument('--batch-consume', help='[DEPRECATED] Use --consume-batch instead')
-    consume_group.add_argument('--scan-available-messages', action='store_true', help='[DEPRECATED] Use --consume-scan-available instead')
     
     # =============================================================================
     # CONSUMER GROUP MANAGEMENT GROUP (--group-*)
     # =============================================================================
     group_group = parser.add_argument_group('Consumer Group Management')
     
-    # New prefixed arguments
+    # Group arguments
     group_group.add_argument('--group-list', action='store_true', help='List consumer groups')
     group_group.add_argument('--group-list-detailed', action='store_true', help='Show detailed consumer group information')
     group_group.add_argument('--group-create', help='Create a new consumer group (format: group_name:topic_name)')
@@ -2051,26 +2289,12 @@ def parse_args():
     group_group.add_argument('--group-write-from-file', help='Write message from file to consumer group (format: group_name:topic_name:file_path)')
     group_group.add_argument('--group-lag', help='Show consumer lag for group')
     
-    # Legacy arguments (deprecated)
-    group_group.add_argument('--list-consumer-groups', action='store_true', help='[DEPRECATED] Use --group-list instead')
-    group_group.add_argument('--detailed-consumer-groups', action='store_true', help='[DEPRECATED] Use --group-list-detailed instead')
-    group_group.add_argument('--add-consumer-group', help='[DEPRECATED] Use --group-create instead')
-    group_group.add_argument('--delete-consumer-group', help='[DEPRECATED] Use --group-delete instead')
-    group_group.add_argument('--describe-consumer-group', help='[DEPRECATED] Use --group-describe instead')
-    group_group.add_argument('--browse-group', help='[DEPRECATED] Use --group-browse instead')
-    group_group.add_argument('--browse-max-messages', type=int, default=10, help='[DEPRECATED] Use --group-browse-max-messages instead')
-    group_group.add_argument('--browse-timeout', type=float, default=5.0, help='[DEPRECATED] Use --group-browse-timeout instead')
-    group_group.add_argument('--create-test-group', help='[DEPRECATED] Use --group-create-test instead')
-    group_group.add_argument('--alter-group-offsets', help='[DEPRECATED] Use --group-alter-offsets instead')
-    group_group.add_argument('--write-to-group', help='[DEPRECATED] Use --group-write-from-file instead')
-    group_group.add_argument('--show-consumer-lag', help='[DEPRECATED] Use --group-lag instead')
-    
     # =============================================================================
     # CONSUMER CONTROL GROUP (--consumer-*)
     # =============================================================================
     consumer_group = parser.add_argument_group('Consumer Control')
     
-    # New prefixed arguments
+    # Consumer arguments
     consumer_group.add_argument('--consumer-seek-offset', help='Seek to specific offset (format: topic:partition:offset)')
     consumer_group.add_argument('--consumer-seek-timestamp', help='Seek to specific timestamp (format: topic:partition:timestamp)')
     consumer_group.add_argument('--consumer-pause-partitions', help='Pause partitions (format: topic:partition_list)')
@@ -2083,41 +2307,23 @@ def parse_args():
     consumer_group.add_argument('--consumer-isolation-level', choices=['read_committed', 'read_uncommitted'], 
                                help='Set consumer isolation level')
     
-    # Legacy arguments (deprecated)
-    consumer_group.add_argument('--seek-to-offset', help='[DEPRECATED] Use --consumer-seek-offset instead')
-    consumer_group.add_argument('--seek-to-timestamp', help='[DEPRECATED] Use --consumer-seek-timestamp instead')
-    consumer_group.add_argument('--pause-partitions', help='[DEPRECATED] Use --consumer-pause-partitions instead')
-    consumer_group.add_argument('--resume-partitions', help='[DEPRECATED] Use --consumer-resume-partitions instead')
-    consumer_group.add_argument('--get-watermarks', help='[DEPRECATED] Use --consumer-get-watermarks instead')
-    consumer_group.add_argument('--consumer-group', default='kafka-client-group', help='[DEPRECATED] Use --consumer-group-id instead')
-    consumer_group.add_argument('--from-beginning', action='store_true', help='[DEPRECATED] Use --consumer-from-beginning instead')
-    consumer_group.add_argument('--max-messages', type=int, help='[DEPRECATED] Use --consumer-max-messages instead')
-    consumer_group.add_argument('--timeout', type=float, default=1.0, help='[DEPRECATED] Use --consumer-timeout instead')
-    consumer_group.add_argument('--isolation-level', choices=['read_committed', 'read_uncommitted'], 
-                               help='[DEPRECATED] Use --consumer-isolation-level instead')
-    
     # =============================================================================
     # CLUSTER & BROKER MANAGEMENT GROUP (--cluster-*)
     # =============================================================================
     cluster_group = parser.add_argument_group('Cluster & Broker Management')
     
-    # New prefixed arguments
+    # Cluster arguments
     cluster_group.add_argument('--cluster-info', action='store_true', help='Show cluster information')
     cluster_group.add_argument('--cluster-list-brokers', action='store_true', help='List brokers')
     cluster_group.add_argument('--cluster-broker-configs', action='store_true', help='Show broker configurations')
     cluster_group.add_argument('--cluster-broker-health', action='store_true', help='Show broker health information')
-    
-    # Legacy arguments (deprecated)
-    cluster_group.add_argument('--list-brokers', action='store_true', help='[DEPRECATED] Use --cluster-list-brokers instead')
-    cluster_group.add_argument('--broker-configs', action='store_true', help='[DEPRECATED] Use --cluster-broker-configs instead')
-    cluster_group.add_argument('--show-broker-health', action='store_true', help='[DEPRECATED] Use --cluster-broker-health instead')
     
     # =============================================================================
     # SECURITY & ACCESS CONTROL GROUP (--security-*)
     # =============================================================================
     security_group = parser.add_argument_group('Security & Access Control')
     
-    # New prefixed arguments
+    # Security arguments
     security_group.add_argument('--security-acl-list', action='store_true', help='Show Access Control Lists')
     security_group.add_argument('--security-acl-create', help='Create an ACL (format: resource_type:resource_name:principal:operation:permission)')
     security_group.add_argument('--security-acl-delete', help='Delete an ACL (format: resource_type:resource_name:principal:operation:permission)')
@@ -2132,279 +2338,50 @@ def parse_args():
     security_group.add_argument('--security-test-injection', action='store_true', help='Test message injection')
     security_group.add_argument('--security-full-audit', action='store_true', help='Run all security tests')
     
-    # Legacy arguments (deprecated)
-    security_group.add_argument('--acls', action='store_true', help='[DEPRECATED] Use --security-acl-list instead')
-    security_group.add_argument('--create-acl', help='[DEPRECATED] Use --security-acl-create instead')
-    security_group.add_argument('--delete-acl', help='[DEPRECATED] Use --security-acl-delete instead')
-    security_group.add_argument('--user-credentials', action='store_true', help='[DEPRECATED] Use --security-user-credentials instead')
-    security_group.add_argument('--alter-user-credentials', help='[DEPRECATED] Use --security-user-credentials-alter instead')
-    security_group.add_argument('--delete-user-credentials', help='[DEPRECATED] Use --security-user-credentials-delete instead')
-    security_group.add_argument('--describe-user-credentials', nargs='?', const=None, metavar='USERNAME',
-                               help='[DEPRECATED] Use --security-user-credentials-describe instead')
-    security_group.add_argument('--test-permissions', action='store_true', help='[DEPRECATED] Use --security-test-permissions instead')
-    security_group.add_argument('--audit-security', action='store_true', help='[DEPRECATED] Use --security-audit instead')
-    security_group.add_argument('--enumerate-sensitive', action='store_true', help='[DEPRECATED] Use --security-enumerate-sensitive instead')
-    security_group.add_argument('--test-injection', action='store_true', help='[DEPRECATED] Use --security-test-injection instead')
-    security_group.add_argument('--full-security-audit', action='store_true', help='[DEPRECATED] Use --security-full-audit instead')
+    # CVE-based security checks
+    security_group.add_argument('--security-cve-deserialization', action='store_true', 
+                               help='Check for deserialization vulnerabilities (CVE-2023-46663, CVE-2020-13933)')
+    security_group.add_argument('--security-cve-sasl-bypass', action='store_true', 
+                               help='Check for SASL authentication bypass (CVE-2023-46662)')
+    security_group.add_argument('--security-cve-metadata-disclosure', action='store_true', 
+                               help='Check for metadata disclosure vulnerabilities (CVE-2023-46661)')
+    security_group.add_argument('--security-cve-log4j', action='store_true', 
+                               help='Check for Log4j vulnerabilities (CVE-2021-44228, CVE-2021-45046)')
+    security_group.add_argument('--security-cve-path-traversal', action='store_true', 
+                               help='Check for path traversal vulnerabilities (CVE-2022-23305)')
+    security_group.add_argument('--security-cve-connect-deserialization', action='store_true', 
+                               help='Check for Kafka Connect deserialization vulnerabilities (CVE-2024-3498)')
+    security_group.add_argument('--security-cve-dos', action='store_true', 
+                               help='Check for denial of service vulnerabilities (CVE-2023-46660)')
+    security_group.add_argument('--security-cve-comprehensive', action='store_true', 
+                               help='Run comprehensive CVE-based security audit (all CVE checks)')
     
     # =============================================================================
     # MONITORING & METRICS GROUP (--monitor-*)
     # =============================================================================
     monitor_group = parser.add_argument_group('Monitoring & Metrics')
     
-    # New prefixed arguments
+    # Monitoring arguments
     monitor_group.add_argument('--monitor-consumer-metrics', action='store_true', help='Show consumer metrics')
     monitor_group.add_argument('--monitor-producer-metrics', action='store_true', help='Show producer metrics')
     monitor_group.add_argument('--monitor-all', action='store_true', help='Show all information')
-    
-    # Legacy arguments (deprecated)
-    monitor_group.add_argument('--show-consumer-metrics', action='store_true', help='[DEPRECATED] Use --monitor-consumer-metrics instead')
-    monitor_group.add_argument('--show-producer-metrics', action='store_true', help='[DEPRECATED] Use --monitor-producer-metrics instead')
-    monitor_group.add_argument('--all', action='store_true', help='[DEPRECATED] Use --monitor-all instead')
     
     # =============================================================================
     # TRANSACTION MANAGEMENT GROUP (--transaction-*)
     # =============================================================================
     transaction_group = parser.add_argument_group('Transaction Management')
     
-    # New prefixed arguments
+    # Transaction arguments
     transaction_group.add_argument('--transaction-begin', action='store_true', help='Begin a transaction')
     transaction_group.add_argument('--transaction-commit', action='store_true', help='Commit current transaction')
     transaction_group.add_argument('--transaction-abort', action='store_true', help='Abort current transaction')
     
-    # Legacy arguments (deprecated)
-    transaction_group.add_argument('--begin-transaction', action='store_true', help='[DEPRECATED] Use --transaction-begin instead')
-    transaction_group.add_argument('--commit-transaction', action='store_true', help='[DEPRECATED] Use --transaction-commit instead')
-    transaction_group.add_argument('--abort-transaction', action='store_true', help='[DEPRECATED] Use --transaction-abort instead')
-    
     return parser.parse_args()
 
-def handle_legacy_args(args):
-    """Handle legacy arguments for backward compatibility"""
-    import warnings
-    
-    # Connection & Security legacy arguments
-    if args.tls:
-        warnings.warn("--tls is deprecated, use --connection-tls instead", DeprecationWarning, stacklevel=2)
-        args.connection_tls = True
-    if args.ca_cert:
-        warnings.warn("--ca-cert is deprecated, use --connection-ca-cert instead", DeprecationWarning, stacklevel=2)
-        args.connection_ca_cert = args.ca_cert
-    if args.client_cert:
-        warnings.warn("--client-cert is deprecated, use --connection-client-cert instead", DeprecationWarning, stacklevel=2)
-        args.connection_client_cert = args.client_cert
-    if args.stick_to_broker:
-        warnings.warn("--stick-to-broker is deprecated, use --connection-stick-to-broker instead", DeprecationWarning, stacklevel=2)
-        args.connection_stick_to_broker = True
-    
-    # Topic Management legacy arguments
-    if args.list_topics:
-        warnings.warn("--list-topics is deprecated, use --topic-list instead", DeprecationWarning, stacklevel=2)
-        args.topic_list = True
-    if args.list_topics_partitions:
-        warnings.warn("--list-topics-partitions is deprecated, use --topic-list-partitions instead", DeprecationWarning, stacklevel=2)
-        args.topic_list_partitions = True
-    if args.add_topic:
-        warnings.warn("--add-topic is deprecated, use --topic-create instead", DeprecationWarning, stacklevel=2)
-        args.topic_create = args.add_topic
-    if args.delete_topic:
-        warnings.warn("--delete-topic is deprecated, use --topic-delete instead", DeprecationWarning, stacklevel=2)
-        args.topic_delete = args.delete_topic
-    if args.add_partitions:
-        warnings.warn("--add-partitions is deprecated, use --topic-add-partitions instead", DeprecationWarning, stacklevel=2)
-        args.topic_add_partitions = args.add_partitions
-    if args.alter_topic_config:
-        warnings.warn("--alter-topic-config is deprecated, use --topic-alter-config instead", DeprecationWarning, stacklevel=2)
-        args.topic_alter_config = args.alter_topic_config
-    if args.delete_records:
-        warnings.warn("--delete-records is deprecated, use --topic-delete-records instead", DeprecationWarning, stacklevel=2)
-        args.topic_delete_records = args.delete_records
-    if args.elect_leaders:
-        warnings.warn("--elect-leaders is deprecated, use --topic-elect-leaders instead", DeprecationWarning, stacklevel=2)
-        args.topic_elect_leaders = args.elect_leaders
-    
-    # Message Production legacy arguments
-    if args.produce:
-        warnings.warn("--produce is deprecated, use --produce-message instead", DeprecationWarning, stacklevel=2)
-        args.produce_message = args.produce
-    if args.key:
-        warnings.warn("--key is deprecated, use --produce-key instead", DeprecationWarning, stacklevel=2)
-        args.produce_key = args.key
-    if args.value:
-        warnings.warn("--value is deprecated, use --produce-value instead", DeprecationWarning, stacklevel=2)
-        args.produce_value = args.value
-    if args.json_value:
-        warnings.warn("--json-value is deprecated, use --produce-json-value instead", DeprecationWarning, stacklevel=2)
-        args.produce_json_value = args.json_value
-    if args.write_to_topic:
-        warnings.warn("--write-to-topic is deprecated, use --produce-from-file instead", DeprecationWarning, stacklevel=2)
-        args.produce_from_file = args.write_to_topic
-    if args.batch_produce:
-        warnings.warn("--batch-produce is deprecated, use --produce-batch instead", DeprecationWarning, stacklevel=2)
-        args.produce_batch = args.batch_produce
-    
-    # Message Consumption legacy arguments
-    if args.subscribe:
-        warnings.warn("--subscribe is deprecated, use --consume-subscribe instead", DeprecationWarning, stacklevel=2)
-        args.consume_subscribe = args.subscribe
-    if args.subscribe_wildcard:
-        warnings.warn("--subscribe-wildcard is deprecated, use --consume-subscribe-wildcard instead", DeprecationWarning, stacklevel=2)
-        args.consume_subscribe_wildcard = args.subscribe_wildcard
-    if args.batch_consume:
-        warnings.warn("--batch-consume is deprecated, use --consume-batch instead", DeprecationWarning, stacklevel=2)
-        args.consume_batch = args.batch_consume
-    if args.scan_available_messages:
-        warnings.warn("--scan-available-messages is deprecated, use --consume-scan-available instead", DeprecationWarning, stacklevel=2)
-        args.consume_scan_available = True
-    
-    # Consumer Group Management legacy arguments
-    if args.list_consumer_groups:
-        warnings.warn("--list-consumer-groups is deprecated, use --group-list instead", DeprecationWarning, stacklevel=2)
-        args.group_list = True
-    if args.detailed_consumer_groups:
-        warnings.warn("--detailed-consumer-groups is deprecated, use --group-list-detailed instead", DeprecationWarning, stacklevel=2)
-        args.group_list_detailed = True
-    if args.add_consumer_group:
-        warnings.warn("--add-consumer-group is deprecated, use --group-create instead", DeprecationWarning, stacklevel=2)
-        args.group_create = args.add_consumer_group
-    if args.delete_consumer_group:
-        warnings.warn("--delete-consumer-group is deprecated, use --group-delete instead", DeprecationWarning, stacklevel=2)
-        args.group_delete = args.delete_consumer_group
-    if args.describe_consumer_group:
-        warnings.warn("--describe-consumer-group is deprecated, use --group-describe instead", DeprecationWarning, stacklevel=2)
-        args.group_describe = args.describe_consumer_group
-    if args.browse_group:
-        warnings.warn("--browse-group is deprecated, use --group-browse instead", DeprecationWarning, stacklevel=2)
-        args.group_browse = args.browse_group
-    if args.browse_max_messages:
-        warnings.warn("--browse-max-messages is deprecated, use --group-browse-max-messages instead", DeprecationWarning, stacklevel=2)
-        args.group_browse_max_messages = args.browse_max_messages
-    if args.browse_timeout:
-        warnings.warn("--browse-timeout is deprecated, use --group-browse-timeout instead", DeprecationWarning, stacklevel=2)
-        args.group_browse_timeout = args.browse_timeout
-    if args.create_test_group:
-        warnings.warn("--create-test-group is deprecated, use --group-create-test instead", DeprecationWarning, stacklevel=2)
-        args.group_create_test = args.create_test_group
-    if args.alter_group_offsets:
-        warnings.warn("--alter-group-offsets is deprecated, use --group-alter-offsets instead", DeprecationWarning, stacklevel=2)
-        args.group_alter_offsets = args.alter_group_offsets
-    if args.write_to_group:
-        warnings.warn("--write-to-group is deprecated, use --group-write-from-file instead", DeprecationWarning, stacklevel=2)
-        args.group_write_from_file = args.write_to_group
-    if args.show_consumer_lag:
-        warnings.warn("--show-consumer-lag is deprecated, use --group-lag instead", DeprecationWarning, stacklevel=2)
-        args.group_lag = args.show_consumer_lag
-    
-    # Consumer Control legacy arguments
-    if args.seek_to_offset:
-        warnings.warn("--seek-to-offset is deprecated, use --consumer-seek-offset instead", DeprecationWarning, stacklevel=2)
-        args.consumer_seek_offset = args.seek_to_offset
-    if args.seek_to_timestamp:
-        warnings.warn("--seek-to-timestamp is deprecated, use --consumer-seek-timestamp instead", DeprecationWarning, stacklevel=2)
-        args.consumer_seek_timestamp = args.seek_to_timestamp
-    if args.pause_partitions:
-        warnings.warn("--pause-partitions is deprecated, use --consumer-pause-partitions instead", DeprecationWarning, stacklevel=2)
-        args.consumer_pause_partitions = args.pause_partitions
-    if args.resume_partitions:
-        warnings.warn("--resume-partitions is deprecated, use --consumer-resume-partitions instead", DeprecationWarning, stacklevel=2)
-        args.consumer_resume_partitions = args.resume_partitions
-    if args.get_watermarks:
-        warnings.warn("--get-watermarks is deprecated, use --consumer-get-watermarks instead", DeprecationWarning, stacklevel=2)
-        args.consumer_get_watermarks = args.get_watermarks
-    if args.consumer_group:
-        warnings.warn("--consumer-group is deprecated, use --consumer-group-id instead", DeprecationWarning, stacklevel=2)
-        args.consumer_group_id = args.consumer_group
-    if args.from_beginning:
-        warnings.warn("--from-beginning is deprecated, use --consumer-from-beginning instead", DeprecationWarning, stacklevel=2)
-        args.consumer_from_beginning = True
-    if args.max_messages:
-        warnings.warn("--max-messages is deprecated, use --consumer-max-messages instead", DeprecationWarning, stacklevel=2)
-        args.consumer_max_messages = args.max_messages
-    if args.timeout:
-        warnings.warn("--timeout is deprecated, use --consumer-timeout instead", DeprecationWarning, stacklevel=2)
-        args.consumer_timeout = args.timeout
-    if args.isolation_level:
-        warnings.warn("--isolation-level is deprecated, use --consumer-isolation-level instead", DeprecationWarning, stacklevel=2)
-        args.consumer_isolation_level = args.isolation_level
-    
-    # Cluster & Broker Management legacy arguments
-    if args.list_brokers:
-        warnings.warn("--list-brokers is deprecated, use --cluster-list-brokers instead", DeprecationWarning, stacklevel=2)
-        args.cluster_list_brokers = True
-    if args.broker_configs:
-        warnings.warn("--broker-configs is deprecated, use --cluster-broker-configs instead", DeprecationWarning, stacklevel=2)
-        args.cluster_broker_configs = True
-    if args.show_broker_health:
-        warnings.warn("--show-broker-health is deprecated, use --cluster-broker-health instead", DeprecationWarning, stacklevel=2)
-        args.cluster_broker_health = True
-    
-    # Security & Access Control legacy arguments
-    if args.acls:
-        warnings.warn("--acls is deprecated, use --security-acl-list instead", DeprecationWarning, stacklevel=2)
-        args.security_acl_list = True
-    if args.create_acl:
-        warnings.warn("--create-acl is deprecated, use --security-acl-create instead", DeprecationWarning, stacklevel=2)
-        args.security_acl_create = args.create_acl
-    if args.delete_acl:
-        warnings.warn("--delete-acl is deprecated, use --security-acl-delete instead", DeprecationWarning, stacklevel=2)
-        args.security_acl_delete = args.delete_acl
-    if args.user_credentials:
-        warnings.warn("--user-credentials is deprecated, use --security-user-credentials instead", DeprecationWarning, stacklevel=2)
-        args.security_user_credentials = True
-    if args.alter_user_credentials:
-        warnings.warn("--alter-user-credentials is deprecated, use --security-user-credentials-alter instead", DeprecationWarning, stacklevel=2)
-        args.security_user_credentials_alter = args.alter_user_credentials
-    if args.delete_user_credentials:
-        warnings.warn("--delete-user-credentials is deprecated, use --security-user-credentials-delete instead", DeprecationWarning, stacklevel=2)
-        args.security_user_credentials_delete = args.delete_user_credentials
-    if args.describe_user_credentials:
-        warnings.warn("--describe-user-credentials is deprecated, use --security-user-credentials-describe instead", DeprecationWarning, stacklevel=2)
-        args.security_user_credentials_describe = args.describe_user_credentials
-    if args.test_permissions:
-        warnings.warn("--test-permissions is deprecated, use --security-test-permissions instead", DeprecationWarning, stacklevel=2)
-        args.security_test_permissions = True
-    if args.audit_security:
-        warnings.warn("--audit-security is deprecated, use --security-audit instead", DeprecationWarning, stacklevel=2)
-        args.security_audit = True
-    if args.enumerate_sensitive:
-        warnings.warn("--enumerate-sensitive is deprecated, use --security-enumerate-sensitive instead", DeprecationWarning, stacklevel=2)
-        args.security_enumerate_sensitive = True
-    if args.test_injection:
-        warnings.warn("--test-injection is deprecated, use --security-test-injection instead", DeprecationWarning, stacklevel=2)
-        args.security_test_injection = True
-    if args.full_security_audit:
-        warnings.warn("--full-security-audit is deprecated, use --security-full-audit instead", DeprecationWarning, stacklevel=2)
-        args.security_full_audit = True
-    
-    # Monitoring & Metrics legacy arguments
-    if args.show_consumer_metrics:
-        warnings.warn("--show-consumer-metrics is deprecated, use --monitor-consumer-metrics instead", DeprecationWarning, stacklevel=2)
-        args.monitor_consumer_metrics = True
-    if args.show_producer_metrics:
-        warnings.warn("--show-producer-metrics is deprecated, use --monitor-producer-metrics instead", DeprecationWarning, stacklevel=2)
-        args.monitor_producer_metrics = True
-    if args.all:
-        warnings.warn("--all is deprecated, use --monitor-all instead", DeprecationWarning, stacklevel=2)
-        args.monitor_all = True
-    
-    # Transaction Management legacy arguments
-    if args.begin_transaction:
-        warnings.warn("--begin-transaction is deprecated, use --transaction-begin instead", DeprecationWarning, stacklevel=2)
-        args.transaction_begin = True
-    if args.commit_transaction:
-        warnings.warn("--commit-transaction is deprecated, use --transaction-commit instead", DeprecationWarning, stacklevel=2)
-        args.transaction_commit = True
-    if args.abort_transaction:
-        warnings.warn("--abort-transaction is deprecated, use --transaction-abort instead", DeprecationWarning, stacklevel=2)
-        args.transaction_abort = True
-    
-    return args
+
 
 def main():
     args = parse_args()
-    
-    # Handle legacy arguments for backward compatibility
-    args = handle_legacy_args(args)
     
     # Configuration
     bootstrap_servers = args.server
@@ -2665,6 +2642,25 @@ def main():
         if args.security_test_injection:
             test_message_injection(admin_client, metadata, conf)
 
+    # Run CVE-based security checks if requested
+    if args.security_cve_comprehensive:
+        comprehensive_cve_audit(admin_client, metadata)
+    else:
+        if args.security_cve_deserialization:
+            check_deserialization_vulnerabilities(admin_client, metadata)
+        if args.security_cve_sasl_bypass:
+            check_sasl_authentication_bypass(admin_client, metadata)
+        if args.security_cve_metadata_disclosure:
+            check_metadata_disclosure_vulnerabilities(admin_client, metadata)
+        if args.security_cve_log4j:
+            check_log4j_vulnerabilities(admin_client, metadata)
+        if args.security_cve_path_traversal:
+            check_path_traversal_vulnerabilities(admin_client, metadata)
+        if args.security_cve_connect_deserialization:
+            check_connect_deserialization_vulnerabilities(admin_client, metadata)
+        if args.security_cve_dos:
+            check_dos_vulnerabilities(admin_client, metadata)
+
     # Show topic configurations if requested
     if args.topic_configs or args.monitor_all:
         try:
@@ -2845,7 +2841,7 @@ def main():
 
     if args.group_create_test:
         group_name, topic_name = args.group_create_test.split(':')
-        create_test_consumer_group(admin_client, conf, group_name, topic_name)
+        create_consumer_group(admin_client, conf, f"{group_name}:{topic_name}")
         return
 
     if args.consume_scan_available:

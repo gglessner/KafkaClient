@@ -1,43 +1,86 @@
 # Kafka Client
 
-A Python3 script to connect to Apache Kafka servers using SSL client certificates and list all available topics, brokers, and consumer groups. **NEW**: Now includes real-time message consumption capabilities and comprehensive penetration testing features!
+A comprehensive Python3 tool for Apache Kafka administration, monitoring, and security assessment. Connect to Kafka clusters using SSL/TLS certificates and perform a wide range of operations including topic management, message production/consumption, consumer group administration, and security auditing.
 
 ## Author
 
 **Garland Glessner** <gglessner@gmail.com>
 
-## Description
+## Overview
 
-This tool connects to an Apache Kafka server using TLS/SSL with client-side certificate authentication. It provides comprehensive information about the Kafka cluster including:
+This tool provides a complete interface for Apache Kafka cluster management and security assessment. It supports both plaintext and SSL/TLS connections with client certificate authentication, making it suitable for both development and production environments.
 
-- Server version and connection information
-- All brokers in the cluster
-- All topics with partition details
-- Consumer groups
-- Sample topic configurations
-- **NEW**: Detailed cluster information, ACLs, user credentials, and broker configurations (with individual flags)
-- **NEW**: Real-time message consumption from topics
-- **NEW**: Comprehensive penetration testing and security assessment capabilities
+## Key Features
 
-## Features
-
+### Connection & Security
 - SSL/TLS client certificate authentication
-- Server verification disabled (for testing environments)
-- Command-line argument support for flexible configuration
-- Comprehensive cluster information display
 - Support for separate client and CA certificates
-- **NEW**: Selective server information gathering with individual flags
-- **NEW**: Real-time message consumption with JSON parsing
-- **NEW**: Configurable consumer options (group ID, offset reset, message limits)
-- **NEW**: Consumer group browsing without consuming messages
-- **NEW**: Safe consumer group deletion (only if no active consumers)
-- **NEW**: Detailed consumer group information and analysis
-- **NEW**: Test consumer group creation for development and testing
-- **NEW**: Permission testing and privilege escalation detection
-- **NEW**: Security configuration auditing
-- **NEW**: Sensitive data enumeration and pattern matching
-- **NEW**: Message injection testing and payload validation
-- **NEW**: Scan all consumer groups and topics for available (unconsumed) messages without consuming them
+- Broker-sticking configuration for targeted testing
+- Server verification options for testing environments
+
+### Topic Management
+- Create, delete, and list topics
+- Add partitions to existing topics
+- Alter topic configurations
+- Delete records from specific partitions
+- Elect leaders for partitions
+- View topic offsets and configurations
+
+### Message Operations
+- Produce messages with keys and values
+- JSON message support
+- Batch message production from files
+- Real-time message consumption
+- Wildcard topic subscription
+- Batch message consumption with configurable limits
+
+### Consumer Group Management
+- List and describe consumer groups
+- Create and delete consumer groups
+- Browse messages without consuming them
+- Alter consumer group offsets
+- Monitor consumer lag
+- Test consumer group creation
+
+### Consumer Control
+- Seek to specific offsets or timestamps
+- Pause and resume partitions
+- Get watermark offsets
+- Configure isolation levels
+- Set custom timeouts and message limits
+
+### Cluster & Broker Management
+- View cluster information and metadata
+- List all brokers in the cluster
+- Display broker configurations
+- Monitor broker health status
+
+### Security & Access Control
+- View and manage Access Control Lists (ACLs)
+- Manage user SCRAM credentials
+- Test permissions and access rights
+- Comprehensive security auditing
+- Sensitive data enumeration
+- Message injection testing
+
+### Security Assessment
+- CVE-based vulnerability scanning
+- Deserialization vulnerability checks
+- SASL authentication bypass detection
+- Metadata disclosure testing
+- Log4j vulnerability assessment
+- Path traversal vulnerability checks
+- Kafka Connect security analysis
+- Denial of service vulnerability detection
+
+### Monitoring & Metrics
+- Consumer metrics display
+- Producer metrics monitoring
+- Comprehensive cluster monitoring
+
+### Transaction Management
+- Begin, commit, and abort transactions
+- Transaction state management
 
 ## Requirements
 
@@ -60,11 +103,11 @@ pip install -r requirements.txt
 
 ## Usage
 
-### **NEW: Argument Reorganization**
+### Argument Organization
 
-All command line arguments are now grouped by logical function with consistent prefixes for improved usability and discoverability. Legacy arguments are still supported (with deprecation warnings), but new users should use the grouped arguments below.
+All command line arguments are organized by logical function with consistent prefixes for improved usability and discoverability.
 
-### **Argument Groups Overview**
+### Argument Groups Overview
 
 | Group                | Prefix              | Example Argument                |
 |----------------------|--------------------|---------------------------------|
@@ -79,33 +122,6 @@ All command line arguments are now grouped by logical function with consistent p
 | Monitoring/Metrics   | --monitor-*        | --monitor-consumer-metrics      |
 | Transactions         | --transaction-*    | --transaction-begin             |
 
-### **Example Usage with New Arguments**
-
-```bash
-# List topics
-python3 KafkaClient.py <server:port> --topic-list
-
-# Create a topic
-python3 KafkaClient.py <server:port> --topic-create mytopic:3:1
-
-# Produce a message
-python3 KafkaClient.py <server:port> --produce-message mytopic --produce-value "hello world"
-
-# Consume messages
-python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-from-beginning
-
-# List consumer groups
-python3 KafkaClient.py <server:port> --group-list
-
-# Show cluster info
-python3 KafkaClient.py <server:port> --cluster-info
-
-# Show security ACLs
-python3 KafkaClient.py <server:port> --security-acl-list
-```
-
-**Legacy arguments are still supported for backward compatibility, but will show deprecation warnings.**
-
 ### Basic Usage
 
 Connect using PLAINTEXT (no TLS, default):
@@ -114,7 +130,7 @@ Connect using PLAINTEXT (no TLS, default):
 python3 KafkaClient.py <server:port>
 ```
 
-Connect using SSL/TLS (must specify --connection-tls):
+Connect using SSL/TLS:
 
 ```bash
 python3 KafkaClient.py <server:port> --connection-tls --connection-client-cert <path/to/cert.pem>
@@ -125,897 +141,252 @@ Example:
 python3 KafkaClient.py localhost:9093 --connection-tls --connection-client-cert valid_ee.decrypted.pem
 ```
 
-### Advanced Usage
+### Topic Management
+
+```bash
+# List all topics
+python3 KafkaClient.py <server:port> --topic-list
+
+# Create a topic
+python3 KafkaClient.py <server:port> --topic-create mytopic:3:1
+
+# Delete a topic
+python3 KafkaClient.py <server:port> --topic-delete mytopic
+
+# Add partitions to a topic
+python3 KafkaClient.py <server:port> --topic-add-partitions mytopic:5
+
+# Alter topic configuration
+python3 KafkaClient.py <server:port> --topic-alter-config mytopic:retention.ms=86400000
+```
+
+### Message Production
+
+```bash
+# Produce a simple message
+python3 KafkaClient.py <server:port> --produce-message mytopic --produce-value "hello world"
+
+# Produce a message with key
+python3 KafkaClient.py <server:port> --produce-message mytopic --produce-key "key1" --produce-value "value1"
+
+# Produce JSON message
+python3 KafkaClient.py <server:port> --produce-message mytopic --produce-json-value '{"user": "john", "action": "login"}'
+
+# Produce from file
+python3 KafkaClient.py <server:port> --produce-from-file mytopic:/path/to/message.txt
+```
+
+### Message Consumption
+
+```bash
+# Consume latest messages
+python3 KafkaClient.py <server:port> --consume-subscribe mytopic
+
+# Consume from beginning of topic
+python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-from-beginning
+
+# Limit number of messages
+python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-max-messages 10
+
+# Custom consumer group and timeout
+python3 KafkaClient.py <server:port> --consume-subscribe mytopic --consumer-group-id my-group --consumer-timeout 2.0
+
+# Subscribe to topics with wildcard
+python3 KafkaClient.py <server:port> --consume-subscribe-wildcard test-
+```
+
+### Consumer Group Management
+
+```bash
+# List consumer groups
+python3 KafkaClient.py <server:port> --group-list
+
+# Get detailed group information
+python3 KafkaClient.py <server:port> --group-list-detailed
+
+# Describe specific group
+python3 KafkaClient.py <server:port> --group-describe my-consumer-group
+
+# Browse messages from group
+python3 KafkaClient.py <server:port> --group-browse my-consumer-group
+
+# Delete consumer group
+python3 KafkaClient.py <server:port> --group-delete my-consumer-group
+
+# Show consumer lag
+python3 KafkaClient.py <server:port> --group-lag my-consumer-group
+```
+
+### Cluster Information
+
+```bash
+# Show cluster information
+python3 KafkaClient.py <server:port> --cluster-info
+
+# List all brokers
+python3 KafkaClient.py <server:port> --cluster-list-brokers
+
+# Show broker configurations
+python3 KafkaClient.py <server:port> --cluster-broker-configs
+
+# Check broker health
+python3 KafkaClient.py <server:port> --cluster-broker-health
+```
+
+### Security & Access Control
+
+```bash
+# List ACLs
+python3 KafkaClient.py <server:port> --security-acl-list
+
+# Create ACL
+python3 KafkaClient.py <server:port> --security-acl-create topic:mytopic:User:alice:read:allow
+
+# Delete ACL
+python3 KafkaClient.py <server:port> --security-acl-delete topic:mytopic:User:alice:read:allow
+
+# Show user credentials
+python3 KafkaClient.py <server:port> --security-user-credentials
+
+# Alter user credentials
+python3 KafkaClient.py <server:port> --security-user-credentials-alter alice:newpassword:SCRAM-SHA-256
+
+# Test permissions
+python3 KafkaClient.py <server:port> --security-test-permissions
+```
+
+### Security Assessment
+
+```bash
+# Run comprehensive security audit
+python3 KafkaClient.py <server:port> --security-full-audit
+
+# Check for specific vulnerabilities
+python3 KafkaClient.py <server:port> --security-cve-deserialization
+python3 KafkaClient.py <server:port> --security-cve-log4j
+python3 KafkaClient.py <server:port> --security-cve-sasl-bypass
+
+# Run all CVE checks
+python3 KafkaClient.py <server:port> --security-cve-comprehensive
+```
+
+### Monitoring & Metrics
+
+```bash
+# Show consumer metrics
+python3 KafkaClient.py <server:port> --monitor-consumer-metrics
+
+# Show producer metrics
+python3 KafkaClient.py <server:port> --monitor-producer-metrics
+
+# Show all information
+python3 KafkaClient.py <server:port> --monitor-all
+```
+
+### Advanced Configuration
 
 Use separate files for client certificate and CA certificate:
 
 ```bash
-python3 KafkaClient.py <server:port> --client-cert <client.pem> --ca-cert <ca.pem>
+python3 KafkaClient.py <server:port> --connection-client-cert <client.pem> --connection-ca-cert <ca.pem>
 ```
 
-### Selective Information
-
-Get specific types of server information:
+Stick to initial broker (disable broker discovery):
 
 ```bash
-# Show only cluster information
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --cluster-info
-
-# Show ACLs and user credentials
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --acls --user-credentials
-
-# Show all available information
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --all
+python3 KafkaClient.py <server:port> --connection-stick-to-broker
 ```
 
-### **NEW: Message Consumption**
-
-Consume messages from a topic in real-time:
-
-```bash
-# Basic consumption (latest messages)
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic
-
-# Consume from beginning of topic
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --from-beginning
-
-# Limit number of messages
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --max-messages 10
-
-# Custom consumer group and timeout
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --subscribe my-topic --consumer-group my-group --timeout 2.0
-```
-
-### **NEW: Consumer Group Browsing**
-
-Browse messages from an existing consumer group without consuming them:
-
-```bash
-# Browse messages from a consumer group (default: 10 messages, 5 second timeout)
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --browse-group my-consumer-group
-
-# Browse with custom limits
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --browse-group my-consumer-group --browse-max-messages 20 --browse-timeout 10.0
-```
-
-**Features:**
-- **Safe Browsing**: Uses temporary consumer group, doesn't affect original group
-- **No Offset Commits**: Reads messages without advancing group offsets
-- **Group Information**: Shows group state, members, and protocol
-- **Offset Details**: Displays current committed offsets for each partition
-- **Message Preview**: Shows message content with JSON parsing
-- **Configurable Limits**: Control number of messages and timeout
-
-### **NEW: Consumer Group Management**
-
-Safely delete consumer groups (only if no active consumers):
-
-```bash
-# Delete a consumer group safely
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --delete-consumer-group my-consumer-group
-```
-
-Get detailed information about a specific consumer group:
-
-```bash
-# Describe a consumer group in detail
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --describe-consumer-group my-consumer-group
-```
-
-Create a test consumer group for testing purposes:
-
-```bash
-# Create a test consumer group (format: group_name:topic_name)
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --create-test-group test-group:test-topic
-```
-
-**Safety Features:**
-- **Pre-deletion Check**: Verifies group state and member count
-- **Active Consumer Detection**: Refuses to delete if consumers are connected
-- **Clear Error Messages**: Explains why deletion failed
-- **Helpful Suggestions**: Tells users what to do if deletion fails
-
-**Describe Consumer Group Features:**
-- **Group Information**: State, protocol type, member count
-- **Member Details**: Client ID, host, timeouts, partition assignments
-- **Committed Offsets**: Current offset positions for all partitions
-- **Group Health Summary**: Status assessment and recommendations
-
-**Example Output for Describe:**
-```
-============================================================
-CONSUMER GROUP DETAILS: my-consumer-group
-============================================================
-
-1. Getting consumer group information...
-   ✓ Group ID: my-consumer-group
-   ✓ State: Stable
-   ✓ Protocol Type: consumer
-   ✓ Protocol: range
-   ✓ Members: 2
-
-2. Member Details:
-   Member 1:
-     ✓ Member ID: consumer-1-1234567890
-     ✓ Client ID: my-consumer-app
-     ✓ Client Host: 192.168.x.x
-     ✓ Session Timeout: 30000ms
-     ✓ Partition Assignments:
-       - my-topic[0]: partition 0
-       - my-topic[1]: partition 1
-
-3. Committed Offsets:
-   ✓ Found 2 partition assignments with offsets:
-     - my-topic[0]: offset 12345
-     - my-topic[1]: offset 67890
-
-4. Group Summary:
-   ✓ Group is healthy and active
-   ✓ 2 consumer(s) are processing messages
-```
-
-**Example Output for Delete:**
-```
-============================================================
-SAFELY DELETING CONSUMER GROUP: my-consumer-group
-============================================================
-
-1. Checking consumer group status...
-   ✓ Group State: Stable
-   ✓ Members: 0
-   ✓ Group is empty - safe to delete
-
-2. Attempting to delete consumer group...
-   ✓ SUCCESS: Consumer group 'my-consumer-group' deleted successfully
-```
-
-### **NEW: Scan for Available Messages**
-
-Scan all consumer groups and topics to see where messages are available for consumption (without consuming or committing offsets):
-
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --scan-available-messages
-```
-
-- Lists all consumer groups and topics
-- Compares each group's committed offset to the latest offset for every topic/partition
-- Reports where messages are available for consumption
-- Does not consume or commit any messages
-
-**Sample Output:**
-```
-==============================
-SCANNING FOR AVAILABLE MESSAGES
-==============================
-
-Group                          Topic                          Partition  Committed  Latest     Available 
-----------------------------------------------------------------------------------------------------
-my-group                       my-topic                       0          12345      12350      5         
-my-group                       my-topic                       1          67890      67900      10        
-
-✓ Scan complete. 2 topic-partitions have available messages for their groups.
-```
-
-**Note:**
-- This feature requires a recent version of the `confluent_kafka` Python library. Some older versions may not support the necessary offset query APIs and will display an error or no results.
-- If you see errors about `ConsumerGroupTopicPartitions` or argument signatures, upgrade with:
-  ```
-  pip install -U confluent-kafka
-  ```
-- This feature works with both Apache Kafka and Confluent Platform brokers.
-
-### **NEW: Penetration Testing & Security Assessment**
-
-#### Complete Security Audit
-Run all security tests and assessments:
-
-```bash
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --full-security-audit
-```
-
-#### Individual Security Tests
-
-**Permission Testing:**
-```bash
-# Test topic creation, deletion, partition creation, configuration alteration, and consumer group permissions
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-permissions
-```
-
-**Security Configuration Audit:**
-```bash
-# Audit SSL/TLS, authentication, and authorization settings
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --audit-security
-```
-
-**Sensitive Data Enumeration:**
-```bash
-# Scan topics for potentially sensitive data patterns
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --enumerate-sensitive
-```
-
-**Message Injection Testing:**
-```bash
-# Test ability to inject messages into topics
-python3 KafkaClient.py <server:port> --client-cert <cert.pem> --test-injection
-```
-
-### Command Line Arguments
-
-#### Basic Arguments
-- `server`: Kafka server address and port (positional argument)
-  - Example: `localhost:9093`
-- `--tls`: Use SSL/TLS connection (default is plaintext)
-- `--client-cert`: Path to client certificate PEM file (optional, only used with --tls)
-  - If provided, must contain both certificate and private key
-  - If omitted, TLS will be used without client authentication (encryption only)
-- `--ca-cert`: Path to CA certificate PEM file (optional, only used with --tls)
-  - If not provided, uses the client certificate file if available
-  - If neither is provided, system CA certificates will be used
-- `--stick-to-broker`: Stay connected to the initial broker only (disable broker discovery and load balancing)
-  - Useful when you want to connect to a specific broker in a multi-broker cluster
-  - Prevents the client from automatically switching to other brokers
-  - Disables metadata refresh, reconnection backoff, and load balancing
-  - Recommended when you need consistent connection to a particular broker
-
-#### Topic Listing Arguments
-- `--list-topics`: List only topic names (no partition details)
-- `--list-topics-partitions`: List topics with partition details (leader, replicas, ISRs)
-- `--add-topic`: Create a new topic (format: topic_name:partitions:replication_factor)
-- `--delete-topic`: Delete a topic
-- `--list-consumer-groups`: List consumer groups
-- `--list-brokers`: List broker information
-
-#### Information Flags
-- `--cluster-info`: Show cluster information (ID, controller, etc.)
-- `--acls`: Show Access Control Lists (ACLs)
-- `--detailed-consumer-groups`: Show detailed consumer group information
-- `--user-credentials`: Show user SCRAM credentials
-- `--broker-configs`: Show broker configurations
-- `--topic-offsets`: Show topic offsets and message positions
-- `--topic-configs`: Show topic configurations
-- `--all`: Show all available information
-
-#### Consumer Arguments
-- `--subscribe`: Topic to subscribe to and read messages from
-- `--consumer-group`: Consumer group ID (default: kafka-client-consumer)
-- `--max-messages`: Maximum number of messages to read (default: unlimited)
-- `--from-beginning`: Start reading from the beginning of the topic
-- `--timeout`: Consumer poll timeout in seconds (default: 1.0)
-- `--browse-group`: Browse messages from an existing consumer group (without consuming)
-- `--browse-max-messages`: Maximum messages to browse from group (default: 10)
-- `--browse-timeout`: Browse timeout in seconds (default: 5.0)
-- `--delete-consumer-group`: Safely delete a consumer group (only if no active consumers)
-- `--describe-consumer-group`: Get detailed information about a specific consumer group
-- `--create-test-group`: Create a test consumer group for testing purposes (format: group_name:topic_name)
-
-#### **NEW: Penetration Testing Arguments**
-- `--test-permissions`: Test various permissions (topic creation, deletion, etc.)
-- `--audit-security`: Audit security configurations (SSL/TLS, auth, etc.)
-- `--enumerate-sensitive`: Look for potentially sensitive data in topics
-- `--test-injection`: Test ability to inject messages into topics
-- `--full-security-audit`: Run all security tests and audits
-
-#### **NEW: Scan for Available Messages**
-- `--scan-available-messages`: Scan all consumer groups and topics for available (unconsumed) messages without consuming them
-
-#### **NEW: Advanced Kafka Administration Arguments**
-- `--create-acl`: Create an ACL (format: resource_type:resource_name:principal:operation:permission)
-- `--delete-acl`: Delete an ACL (format: resource_type:resource_name:principal:operation:permission)
-- `--add-partitions`: Add partitions to topic (format: topic_name:new_partition_count)
-- `--alter-topic-config`: Alter topic configuration (format: topic_name:config_key=value)
-- `--delete-records`: Delete records from topic (format: topic_name:partition:offset)
-- `--elect-leaders`: Elect leaders for partitions (format: topic_name:partition)
-- `--alter-group-offsets`: Alter consumer group offsets (format: group_name:topic:partition:offset)
-- `--alter-user-credentials`: Alter user SCRAM credentials (format: username:password:mechanism)
-- `--delete-user-credentials`: Delete user SCRAM credentials (format: username:mechanism)
-- `--describe-user-credentials`: Describe user SCRAM credentials (username optional)
-
-#### **NEW: Advanced Consumer Control Arguments**
-- `--seek-to-offset`: Seek to specific offset (format: topic:partition:offset)
-- `--seek-to-timestamp`: Seek to specific timestamp (format: topic:partition:timestamp)
-- `--pause-partitions`: Pause partitions (format: topic:partition_list)
-- `--resume-partitions`: Resume partitions (format: topic:partition_list)
-- `--get-watermarks`: Get watermark offsets (format: topic:partition)
-
-#### **NEW: Batch Operations Arguments**
-- `--batch-produce`: Batch produce messages (format: topic:file_path)
-- `--batch-consume`: Batch consume messages (format: topic:max_messages:timeout)
-
-#### **NEW: Monitoring and Metrics Arguments**
-- `--show-consumer-metrics`: Show consumer metrics
-- `--show-producer-metrics`: Show producer metrics
-- `--show-broker-health`: Show broker health information
-- `--show-consumer-lag`: Show consumer lag for group
-
-#### **NEW: Transaction Support Arguments**
-- `--begin-transaction`: Begin a transaction
-- `--commit-transaction`: Commit current transaction
-- `--abort-transaction`: Abort current transaction
-
-#### **NEW: Isolation Level Arguments**
-- `--isolation-level`: Set consumer isolation level (choices: read_committed, read_uncommitted)
-
-### Help
-
-```bash
-python3 KafkaClient.py --help
-```
-
-## Certificate Formats
-
-### PEM Files
-
-The script expects PEM format certificates. If you have a PFX/PKCS#12 file, convert it using OpenSSL:
-
-```bash
-# Extract all certificates from PFX to PEM
-openssl pkcs12 -in your_cert.pfx -out extracted_certs.pem -nodes
-
-# Extract only client certificate
-openssl pkcs12 -in your_cert.pfx -out client_cert.pem -clcerts -nokeys
-
-# Extract only private key
-openssl pkcs12 -in your_cert.pfx -out private_key.pem -nocerts -nodes
-
-# Extract CA certificate
-openssl pkcs12 -in your_cert.pfx -out ca_cert.pem -cacerts -nokeys
-```
-
-## Output
-
-### Basic Output
-
-The script displays:
-
-1. **Kafka Server Info**: Connection details and broker count
-2. **Topics**: All topics (topic names only by default)
-3. **Controller ID**: The controller broker ID
-
-**Note**: By default, topics are shown without partition details. Use `--list-topics-partitions` to see detailed partition information including leaders, replicas, and ISRs. Use `--list-consumer-groups` to see consumer groups. Use `--list-brokers` to see broker information.
-
-### Selective Information Output
-
-Additional information based on flags:
-
-1. **Cluster Information**: Cluster ID, controller details, authorized operations
-2. **Access Control Lists**: All configured ACLs (if enabled)
-3. **Detailed Consumer Groups**: Group states, member counts, protocols
-4. **User SCRAM Credentials**: User authentication details (if using SASL/SCRAM)
-5. **Broker Configurations**: Key broker settings like listeners, log directories
-6. **Topic Offsets**: Current message positions for topics
-7. **Topic Configurations**: Topic-specific settings
-
-### Message Subscription Output
-
-When subscribing to a topic, the script displays:
-
-```
-Subscribing to topic: my-topic
-Press Ctrl+C to stop reading
---------------------------------------------------
-
-Message #1
-  Topic: my-topic
-  Partition: 0
-  Offset: 12345
-  Key: user-123
-  Value (JSON): {
-    "user_id": "user-123",
-    "action": "login",
-    "timestamp": "2024-01-15T10:30:00Z"
-  }
-  Timestamp: 1705312200000
-------------------------------
-```
-
-**Features:**
-- **JSON Parsing**: Automatically detects and pretty-prints JSON messages
-- **Fallback Handling**: Shows raw text for non-JSON messages
-- **Binary Data Support**: Handles binary message content
-- **Message Metadata**: Shows topic, partition, offset, key, and timestamp
-- **Graceful Shutdown**: Ctrl+C to stop reading
-
-### Consumer Group Browsing Output
-
-When browsing a consumer group, the script displays:
-
-```
-============================================================
-BROWSING CONSUMER GROUP: my-consumer-group
-============================================================
-
-1. Getting group information...
-   ✓ Group State: Stable
-   ✓ Members: 2
-   ✓ Protocol: range
-   ⚠ WARNING: Group has active members. Browsing may interfere with consumption.
-
-2. Getting committed offsets...
-   ✓ Found 3 partition assignments
-   - my-topic[0]: offset 12345
-   - my-topic[1]: offset 67890
-   - my-topic[2]: offset 11111
-
-3. Creating temporary browser consumer...
-
-4. Browsing messages (max: 10)...
-Press Ctrl+C to stop browsing
---------------------------------------------------
-
-Message #1
-  Topic: my-topic
-  Partition: 0
-  Offset: 12345
-  Key: user-123
-  Value (JSON): {
-    "user_id": "user-123",
-    "action": "login",
-    "timestamp": "2024-01-15T10:30:00Z"
-  }
-  Timestamp: 1705312200000
-------------------------------
-
-5. Browse Summary:
-   ✓ Browsed 3 messages from group 'my-consumer-group'
-   ✓ No offsets were committed (safe browsing)
-   ✓ Original group 'my-consumer-group' was not affected
-```
-
-**Features:**
-- **Group Analysis**: Shows group state, member count, and protocol
-- **Offset Mapping**: Displays current committed offsets for each partition
-- **Safe Operation**: Uses temporary consumer group to avoid interference
-- **Message Preview**: Shows message content with JSON parsing
-- **Browse Summary**: Reports results and confirms no offset commits
-
-### **NEW: Security Assessment Output**
-
-#### Permission Testing Output
-```
-============================================================
-PERMISSION TESTING
-============================================================
-
-1. Testing topic creation permission...
-   ✓ SUCCESS: Can create topic 'security-test-1705312200'
-   ✓ SUCCESS: Can delete topic 'security-test-1705312200'
-
-2. Testing partition creation permission...
-   ✓ Created temporary topic 'partition-test-1705312200' with 1 partition
-   ✓ SUCCESS: Can create partitions for topic 'partition-test-1705312200' (increased from 1 to 2)
-   ✓ Cleaned up temporary topic 'partition-test-1705312200'
-
-3. Testing configuration alteration permission...
-   ✓ Created temporary topic 'config-test-1705312200' for config testing
-   ✓ SUCCESS: Can alter topic configuration for 'config-test-1705312200'
-   ✓ Cleaned up temporary topic 'config-test-1705312200'
-
-4. Testing consumer group permissions...
-   ✓ Created temporary topic 'consumer-test-1705312200' for consumer group testing
-   ✓ No messages in topic, but consumer group 'test-group-1705312200' was created
-   ✓ SUCCESS: Can commit offsets for consumer group 'test-group-1705312200'
-   ✓ Closed consumer to leave group 'test-group-1705312200'
-   ✓ SUCCESS: Can delete consumer group 'test-group-1705312200'
-   ✓ Cleaned up temporary topic 'consumer-test-1705312200'
-```
-
-#### Security Configuration Audit Output
-```
-============================================================
-SECURITY CONFIGURATION AUDIT
-============================================================
-
-1. Broker Security Configurations:
-   Broker 1:
-     ✓ SSL/TLS enabled
-     ✓ SASL authentication enabled
-     ✓ Authorization enabled: kafka.security.authorizer.AclAuthorizer
-
-2. Topic Security Configurations:
-   Topic: sensitive-data:
-     ✓ Retention configured: 86400000ms
-     ✓ Cleanup policy: delete
-```
-
-#### Sensitive Data Enumeration Output
-```
-============================================================
-SENSITIVE DATA ENUMERATION
-============================================================
-
-Scanning 15 topics for sensitive data patterns...
-
-⚠ POTENTIALLY SENSITIVE TOPICS FOUND:
-   - user-passwords (matches pattern: 'password')
-   - admin-credentials (matches pattern: 'credential')
-   - financial-transactions (matches pattern: 'financial')
-```
-
-#### Message Injection Testing Output
-```
-============================================================
-MESSAGE INJECTION TESTING
-============================================================
-
-Testing message injection into topic: test-topic
-   ✓ Message delivered to test-topic [0] at offset 12345
-   ✓ SUCCESS: Can inject messages into topic 'test-topic'
-```
-
-## Security Notes
-
-- Server verification is disabled by default (`ssl.endpoint.identification.algorithm: none`)
-- This is suitable for testing environments but should be enabled for production
-- The script uses client certificate authentication for secure connections
-- Individual information flags may expose sensitive configuration information
-- **Consumer groups**: Uses a default group ID that can be customized
-- **Security testing**: May create temporary test topics and send test messages
-- **Permission testing**: Automatically cleans up test resources when possible
-
-## Troubleshooting
-
-### Connection Issues
-
-1. **"SSL handshake failed"**: Server may not be configured for SSL
-2. **"Connect failed"**: Check server address, port, and firewall settings
-3. **"No such file"**: Verify certificate file paths are correct
-
-### Certificate Issues
-
-1. **"BIO routines::no such file"**: Certificate file not found
-2. **"x509 certificate routines"**: Invalid certificate format
-3. **"SSL routines"**: Certificate/private key mismatch
-
-### Information Issues
-
-1. **"Could not fetch ACLs"**: ACLs may not be enabled on the server
-2. **"Could not fetch user credentials"**: SCRAM authentication may not be configured
-3. **"Could not fetch broker configurations"**: Insufficient permissions or API not supported
-
-### Consumer Issues
-
-1. **"Topic not found"**: Verify the topic name exists
-2. **"No messages received"**: Check if messages are being produced to the topic
-3. **"Consumer group errors"**: May indicate permission issues or group conflicts
-4. **"JSON decode errors"**: Normal for non-JSON messages, will show as raw text
-
-### **NEW: Security Testing Issues**
-
-1. **"Permission denied"**: Expected for properly secured environments
-2. **"Topic creation failed"**: May indicate proper access controls
-3. **"Configuration alteration failed"**: May indicate proper security restrictions
-4. **"Message injection failed"**: May indicate proper write permissions
+## Security Features
+
+### CVE-Based Vulnerability Scanning
+
+The tool includes comprehensive vulnerability scanning based on known Kafka CVEs:
+
+- **CVE-2023-46663**: RCE via deserialization
+- **CVE-2023-46662**: SASL authentication bypass
+- **CVE-2023-46661**: Information disclosure in consumer group metadata
+- **CVE-2021-44228**: Log4Shell vulnerability
+- **CVE-2021-45046**: Log4j vulnerability
+- **CVE-2022-23305**: Path traversal vulnerability
+- **CVE-2024-3498**: Kafka Connect deserialization vulnerability
+- **CVE-2023-46660**: Denial of service via crafted requests
+
+### Security Assessment Capabilities
+
+- **Permission Testing**: Test various permissions and access rights
+- **Configuration Auditing**: Audit security configurations
+- **Sensitive Data Enumeration**: Scan for sensitive data patterns
+- **Message Injection Testing**: Test message injection capabilities
+- **Comprehensive Auditing**: Run all security tests in sequence
+
+## Error Handling
+
+The tool includes comprehensive error handling for:
+
+- Connection failures
+- Authentication errors
+- Permission denied scenarios
+- Invalid topic configurations
+- Consumer group conflicts
+- Security policy violations
 
 ## Examples
 
-### Server Information Examples
+### Basic Cluster Information
 
 ```bash
-# Get basic cluster info
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --cluster-info
-
-# Check ACLs and user access
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --acls --user-credentials
-
-# Monitor topic offsets
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --topic-offsets
+python3 KafkaClient.py localhost:9092 --topic-list --group-list --cluster-info
 ```
-
-### Message Consumption Examples
-
-```bash
-# Subscribe to a topic for new messages
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events
-
-# Read all historical messages from a topic
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --from-beginning
-
-# Get last 5 messages from a topic
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --max-messages 5
-
-# Use custom consumer group for testing
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --subscribe events --consumer-group test-group
-```
-
-### **NEW: Consumer Group Management Examples**
-
-```bash
-# Safely delete an empty consumer group
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --delete-consumer-group old-consumer-group
-
-# Get detailed information about a consumer group
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --describe-consumer-group my-consumer-group
-
-# Create a test consumer group for testing
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --create-test-group test-group:test-topic
-
-# Browse messages from a consumer group without consuming
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --browse-group my-consumer-group --browse-max-messages 20
-```
-
-### **NEW: Penetration Testing Examples**
-
-```bash
-# Run complete security assessment
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --full-security-audit
-
-# Test specific permissions
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --test-permissions
-
-# Audit security configurations
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --audit-security
-
-# Look for sensitive data patterns
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --enumerate-sensitive
-
-# Test message injection capabilities
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --test-injection
-```
-
-### Scan for Available Messages Example
-```bash
-python3 KafkaClient.py localhost:9093 --client-cert cert.pem --scan-available-messages
-```
-
-## Penetration Testing Use Cases
 
 ### Security Assessment
-- **Privilege Escalation Detection**: Identify excessive permissions
-- **Access Control Validation**: Verify proper authorization implementation
-- **Configuration Weaknesses**: Find security misconfigurations
-- **Data Exposure Assessment**: Locate potentially sensitive topics
 
-### Compliance Testing
-- **Security Standards**: Assess against security frameworks
-- **Audit Requirements**: Generate security assessment reports
-- **Risk Assessment**: Identify security vulnerabilities
-- **Remediation Planning**: Prioritize security fixes
+```bash
+python3 KafkaClient.py localhost:9092 --connection-tls --connection-client-cert cert.pem --security-cve-comprehensive
+```
 
-### Red Team Operations
-- **Initial Reconnaissance**: Understand Kafka infrastructure
-- **Permission Mapping**: Map available capabilities
-- **Data Discovery**: Find sensitive information
-- **Persistence Testing**: Validate security controls
+### Message Production and Consumption
+
+```bash
+# Produce a message
+python3 KafkaClient.py localhost:9092 --produce-message test-topic --produce-value "Hello Kafka!"
+
+# Consume messages
+python3 KafkaClient.py localhost:9092 --consume-subscribe test-topic --consumer-from-beginning --consumer-max-messages 5
+```
+
+### Consumer Group Management
+
+```bash
+# Create a test consumer group
+python3 KafkaClient.py localhost:9092 --group-create-test my-test-group:test-topic
+
+# Browse messages without consuming
+python3 KafkaClient.py localhost:9092 --group-browse my-test-group --group-browse-max-messages 10
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Connection Refused**: Verify the Kafka server is running and accessible
+2. **Authentication Failed**: Check certificate paths and permissions
+3. **Permission Denied**: Verify ACLs and user credentials
+4. **Topic Not Found**: Ensure the topic exists or create it first
+
+### Debug Information
+
+The tool provides detailed output including:
+- Connection status and configuration
+- Broker information
+- Topic details and configurations
+- Consumer group states
+- Security assessment results
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the terms specified in the LICENSE file.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Support
-
-For issues and questions, please contact:
-- **Author**: Garland Glessner <gglessner@gmail.com>
-- **GitHub Issues**: [Create an issue](https://github.com/yourusername/KafkaClient/issues) 
-
-## TLS/SSL Usage
-
-You can connect to Kafka using TLS/SSL with or without a client certificate:
-
-- **With client certificate (mutual TLS):**
-  - Use `--client-cert <path/to/cert.pem>` to provide your client certificate (must contain both certificate and private key).
-  - Optionally, use `--ca-cert <path/to/ca.pem>` to specify a custom CA certificate for server verification.
-- **Without client certificate (encryption only):**
-  - Omit `--client-cert`. The connection will be encrypted, but the client will not authenticate with a certificate. The broker must be configured with `ssl.client.auth=none`.
-  - You may still use `--ca-cert` to specify a custom CA for server verification.
-
-**Example: TLS with client certificate**
-```bash
-python3 KafkaClient.py <server:port> --client-cert <path/to/cert.pem>
-```
-
-**Example: TLS without client certificate**
-```bash
-python3 KafkaClient.py <server:port>
-```
-
-**Example: TLS with custom CA only**
-```bash
-python3 KafkaClient.py <server:port> --ca-cert <path/to/ca.pem>
-```
-
-### **NEW: Topic Management**
-
-Create new topics with custom partitions and replication:
-
-```bash
-# Create a topic (format: topic_name:partitions:replication_factor)
-python3 KafkaClient.py <server:port> --add-topic my-topic:3:1
-```
-
-Delete existing topics:
-
-```bash
-# Delete a topic
-python3 KafkaClient.py <server:port> --delete-topic my-topic
-```
-
-**Safety Features:**
-- **Existence Check**: Verifies topic exists before attempting deletion
-- **Empty Topic Check**: Ensures topic is empty before deletion
-- **Clear Error Messages**: Explains why deletion failed
-- **Non-destructive**: Only deletes if topic is empty and safe to remove
-
-**Example Output for Create:**
-```
-============================================================
-CREATING TOPIC
-============================================================
-   Topic Name: my-topic
-   Partitions: 3
-   Replication Factor: 1
-   [+] SUCCESS: Topic 'my-topic' created successfully
-```
-
-**Example Output for Delete:**
-```
-============================================================
-DELETING TOPIC
-============================================================
-   Topic Name: my-topic
-   [+] SUCCESS: Topic 'my-topic' deleted successfully
-```
-
-### **NEW: Consumer Group Management**
-
-#### **NEW: Advanced Kafka Administration**
-
-#### **ACL (Access Control List) Management**
-
-Create and manage Access Control Lists for fine-grained permissions:
-
-```bash
-# Create an ACL (format: resource_type:resource_name:principal:operation:permission)
-python3 KafkaClient.py <server:port> --create-acl topic:my-topic:User:alice:ALLOW:READ
-
-# Delete an ACL
-python3 KafkaClient.py <server:port> --delete-acl topic:my-topic:User:alice:ALLOW:READ
-```
-
-**Resource Types:** `topic`, `group`, `broker`, `cluster`, `transactional_id`
-**Operations:** `ALL`, `READ`, `WRITE`, `CREATE`, `DELETE`, `ALTER`, `DESCRIBE`, `CLUSTER_ACTION`, `DESCRIBE_CONFIGS`, `ALTER_CONFIGS`, `IDEMPOTENT_WRITE`
-**Permissions:** `ALLOW`, `DENY`
-
-#### **Advanced Topic Management**
-
-```bash
-# Add partitions to existing topic
-python3 KafkaClient.py <server:port> --add-partitions my-topic:10
-
-# Alter topic configuration
-python3 KafkaClient.py <server:port> --alter-topic-config my-topic:retention.ms=86400000
-
-# Delete records from topic (truncate to specific offset)
-python3 KafkaClient.py <server:port> --delete-records my-topic:0:12345
-
-# Elect leaders for specific partitions
-python3 KafkaClient.py <server:port> --elect-leaders my-topic:0
-```
-
-#### **Consumer Group Offset Management**
-
-```bash
-# Alter consumer group offsets
-python3 KafkaClient.py <server:port> --alter-group-offsets my-group:my-topic:0:12345
-```
-
-#### **User SCRAM Credential Management**
-
-```bash
-# Alter user SCRAM credentials
-python3 KafkaClient.py <server:port> --alter-user-credentials alice:mypassword:SCRAM-SHA-256
-
-# Delete user SCRAM credentials
-python3 KafkaClient.py <server:port> --delete-user-credentials alice:SCRAM-SHA-256
-
-# Describe user SCRAM credentials
-python3 KafkaClient.py <server:port> --describe-user-credentials alice
-```
-
-**Supported Mechanisms:** `SCRAM-SHA-256`, `SCRAM-SHA-512`
-
-### **NEW: Advanced Consumer Control**
-
-#### **Offset and Timestamp Seeking**
-
-```bash
-# Seek to specific offset
-python3 KafkaClient.py <server:port> --seek-to-offset my-topic:0:12345
-
-# Seek to specific timestamp (Unix timestamp in milliseconds)
-python3 KafkaClient.py <server:port> --seek-to-timestamp my-topic:0:1705312200000
-```
-
-#### **Partition Control**
-
-```bash
-# Pause consumption from specific partitions
-python3 KafkaClient.py <server:port> --pause-partitions my-topic:0,1,2
-
-# Resume consumption from specific partitions
-python3 KafkaClient.py <server:port> --resume-partitions my-topic:0,1,2
-```
-
-#### **Watermark Information**
-
-```bash
-# Get low and high watermark offsets
-python3 KafkaClient.py <server:port> --get-watermarks my-topic:0
-```
-
-### **NEW: Batch Operations**
-
-#### **Batch Message Production**
-
-```bash
-# Batch produce messages from file (one message per line)
-python3 KafkaClient.py <server:port> --batch-produce my-topic:messages.txt
-```
-
-#### **Batch Message Consumption**
-
-```bash
-# Batch consume messages with limits
-python3 KafkaClient.py <server:port> --batch-consume my-topic:100:30
-# Format: topic:max_messages:timeout_seconds
-```
-
-### **NEW: Monitoring and Metrics**
-
-#### **Consumer Metrics**
-
-```bash
-# Show consumer metrics and assignment information
-python3 KafkaClient.py <server:port> --show-consumer-metrics
-```
-
-#### **Producer Metrics**
-
-```bash
-# Show producer metrics
-python3 KafkaClient.py <server:port> --show-producer-metrics
-```
-
-#### **Broker Health**
-
-```bash
-# Show broker health information
-python3 KafkaClient.py <server:port> --show-broker-health
-```
-
-#### **Consumer Lag**
-
-```bash
-# Show consumer lag for specific group
-python3 KafkaClient.py <server:port> --show-consumer-lag my-group
-```
-
-### **NEW: Transaction Support**
-
-```bash
-# Begin a transaction
-python3 KafkaClient.py <server:port> --begin-transaction
-
-# Commit current transaction
-python3 KafkaClient.py <server:port> --commit-transaction
-
-# Abort current transaction
-python3 KafkaClient.py <server:port> --abort-transaction
-```
-
-### **NEW: Isolation Level Control**
-
-```bash
-# Set consumer isolation level
-python3 KafkaClient.py <server:port> --isolation-level read_committed --subscribe my-topic
-python3 KafkaClient.py <server:port> --isolation-level read_uncommitted --subscribe my-topic
-```
-
-**Isolation Levels:**
-- `read_committed`: Only read committed messages (default)
-- `read_uncommitted`: Read all messages including uncommitted ones
-
-### **NEW: Penetration Testing & Security Assessment** 
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests. 
